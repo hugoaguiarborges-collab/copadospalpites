@@ -1,0 +1,143 @@
+{
+  "entities": {
+    "participante": {
+      "title": "Participante",
+      "description": "Participant in the game, defined by their unique name",
+      "type": "object",
+      "properties": {
+        "nome": {
+          "type": "string",
+          "description": "Name of the participant"
+        },
+        "pontos": {
+          "type": "number",
+          "description": "Total score of the participant"
+        }
+      },
+      "required": ["nome", "pontos"]
+    },
+    "rodada": {
+      "title": "Rodada",
+      "description": "A match round with opening and closing periods",
+      "type": "object",
+      "properties": {
+        "nome": {
+          "type": "string",
+          "description": "Round name (e.g., Rodada 1)"
+        },
+        "abertura": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Opening timestamp"
+        },
+        "fechamento": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Closing timestamp"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["aberta", "encerrada"],
+          "description": "Current status of the round"
+        }
+      },
+      "required": ["nome", "abertura", "fechamento", "status"]
+    },
+    "palpite": {
+      "title": "Palpite",
+      "description": "A single guess line for a participant, round, and match",
+      "type": "object",
+      "properties": {
+        "participante": {
+          "type": "string",
+          "description": "Name of the participant"
+        },
+        "rodada": {
+          "type": "string",
+          "description": "ID of the round"
+        },
+        "palpite": {
+          "type": "string",
+          "description": "Predicted score (e.g., Brasil 2x1 Argentina)"
+        },
+        "capitao": {
+          "type": "string",
+          "description": "Selected captain"
+        },
+        "data_hora_envio": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Submission timestamp"
+        },
+        "envio_numero": {
+          "type": "number",
+          "description": "Submission order, 1 or 2 (maximum 2 allowed where the 2nd counts)"
+        }
+      },
+      "required": ["participante", "rodada", "palpite", "capitao", "data_hora_envio", "envio_numero"]
+    },
+    "pontuacao": {
+      "title": "Pontuacao",
+      "description": "Manual or automatic points history logs",
+      "type": "object",
+      "properties": {
+        "participante": {
+          "type": "string",
+          "description": "Name of the participant"
+        },
+        "pontos": {
+          "type": "number",
+          "description": "Points adjustment value (can be positive or negative)"
+        },
+        "motivo": {
+          "type": "string",
+          "description": "Reason for the score adjustment"
+        },
+        "data_hora": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of the points adjustment"
+        }
+      },
+      "required": ["participante", "pontos", "motivo", "data_hora"]
+    },
+    "admin": {
+      "title": "Admin",
+      "description": "Administrator login credentials",
+      "type": "object",
+      "properties": {
+        "login": {
+          "type": "string",
+          "description": "Admin username"
+        },
+        "senha_hash": {
+          "type": "string",
+          "description": "Password string or pin for the admin access"
+        }
+      },
+      "required": ["login", "senha_hash"]
+    }
+  },
+  "firestore": {
+    "participantes/{participanteId}": {
+      "schema": { "$ref": "#/entities/participante" },
+      "description": "Collection of game participants"
+    },
+    "rodadas/{rodadaId}": {
+      "schema": { "$ref": "#/entities/rodada" },
+      "description": "Collection of rounds"
+    },
+    "palpites/{palpiteId}": {
+      "schema": { "$ref": "#/entities/palpite" },
+      "description": "Collection of individual participant guesses"
+    },
+    "pontuacoes/{pontuacaoId}": {
+      "schema": { "$ref": "#/entities/pontuacao" },
+      "description": "Score adjustment history"
+    },
+    "admins/{adminId}": {
+      "schema": { "$ref": "#/entities/admin" },
+      "description": "Admin master credentials collection"
+    }
+  }
+}
