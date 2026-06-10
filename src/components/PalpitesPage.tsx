@@ -45,6 +45,7 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
   // Submission result states
   const [statusMsg, setStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [submissionCount, setSubmissionCount] = useState<number>(0);
 
   // Closed rounds guesses state
   const [closedRounds, setClosedRounds] = useState<Rodada[]>([]);
@@ -238,6 +239,56 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
     loadClosedGuesses();
   }, [selectedClosedRound, rounds]);
 
+  // Dynamically check and sync the participant's active round submissions, updating localStorage and submissionCount state
+  useEffect(() => {
+    if (!activeRound) {
+      setSubmissionCount(0);
+      return;
+    }
+    const foundParticipant = participantes.find(p => p.nome.trim().toLowerCase() === nome.trim().toLowerCase());
+    if (!foundParticipant) {
+      setSubmissionCount(0);
+      return;
+    }
+
+    async function checkSubmissions() {
+      const path = 'palpites';
+      const storageKey = `palpites_count_${foundParticipant.id}_${activeRound.id}`;
+      let count = 0;
+      try {
+        const q = query(
+          collection(db, path),
+          where('participante', '==', foundParticipant.nome),
+          where('rodada', '==', activeRound.id)
+        );
+        const snap = await getDocs(q);
+        let hasSub1 = false;
+        let hasSub2 = false;
+        snap.forEach(doc => {
+          const d = doc.data();
+          if (d.envio_numero === 1) hasSub1 = true;
+          if (d.envio_numero === 2) hasSub2 = true;
+        });
+        if (hasSub2) count = 2;
+        else if (hasSub1) count = 1;
+
+        // Keep localStorage and state perfectly synchronized with database reality
+        if (count > 0) {
+          localStorage.setItem(storageKey, String(count));
+        } else {
+          localStorage.removeItem(storageKey);
+        }
+      } catch (err) {
+        console.warn("Could not check submissions in background, reading localStorage fallback:", err);
+        const saved = localStorage.getItem(storageKey);
+        count = saved ? parseInt(saved, 10) : 0;
+      }
+      setSubmissionCount(count);
+    }
+
+    checkSubmissions();
+  }, [nome, activeRound, participantes]);
+
   // Autocomplete suggestions
   const suggestions = participantes.filter(p => 
     p.nome.toLowerCase().includes(nome.toLowerCase()) && 
@@ -377,8 +428,9 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
         });
       }
 
-      // Update local storage count
+      // Update local storage count and state
       localStorage.setItem(storageKey, String(submissionNum));
+      setSubmissionCount(submissionNum);
 
       const nowTime = new Date();
       const hms = `${String(nowTime.getHours()).padStart(2, '0')}:${String(nowTime.getMinutes()).padStart(2, '0')}:${String(nowTime.getSeconds()).padStart(2, '0')}`;
@@ -552,6 +604,30 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
               </div>
             </div>
           </div>
+
+          {submissionCount > 0 && (
+            <div className={`p-4 mb-5 border rounded-xl text-xs flex items-start gap-3 transition-all ${
+              submissionCount === 1 
+                ? 'bg-amber-50/70 border-amber-200/60 text-amber-800' 
+                : 'bg-[#009739]/5 border-[#009739]/20 text-[#009739] font-semibold'
+            }`}>
+              <Info className={`w-5 h-5 shrink-0 ${submissionCount === 1 ? 'text-amber-600' : 'text-[#009739]'}`} />
+              <div className="flex-1">
+                <p className="font-bold mb-0.5">
+                  {submissionCount === 1 
+                    ? '1º Envio Registrado!' 
+                    : 'Limite Máximo Atingido!'
+                  }
+                </p>
+                <p className="opacity-90 leading-relaxed">
+                  {submissionCount === 1 
+                    ? 'Você já registrou 1 palpite para esta rodada. Se desejar alterá-lo, preencha os novos palpites abaixo e envie. Este será o seu 2º palpite de segurança, que substituirá o anterior.' 
+                    : 'Você já enviou os 2 palpites permitidos para esta rodada. Suas escolhas estão salvas e consolidadas. O último envio é o que está valendo para a avaliação.'
+                  }
+                </p>
+              </div>
+            </div>
+          )}
 
           <form onSubmit={handleFormSubmit} className="space-y-4 flex flex-col flex-1">
             <div className="grid grid-cols-12 gap-2 text-[10px] font-bold text-neutral-400 uppercase tracking-widest px-1">
