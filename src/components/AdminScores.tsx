@@ -14,6 +14,7 @@ import { db } from '../firebase';
 import { Participante, PontuacaoLog } from '../types';
 import { resetTournamentToNewChampionship } from '../utils/tournamentReset';
 import { ChevronUp, ChevronDown, RefreshCw, Star, ShieldAlert, History, AlertTriangle } from 'lucide-react';
+import { UclStarball, UclBadge, UclTrophy } from './UclAssets';
 
 export default function AdminScores() {
   const [participants, setParticipants] = useState<Participante[]>([]);
@@ -155,14 +156,18 @@ export default function AdminScores() {
 
   return (
     <div className="space-y-8">
-      <div className="border-b border-neutral-100 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="border-b border-cyan-500/20 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h3 className="text-lg font-black font-display text-neutral-800 uppercase flex items-center gap-2">
-            <span className="w-2.5 h-5 bg-[#009739] block rounded-xs"></span>
-            Gerenciar Pontuação
+          <div className="flex items-center gap-2 mb-1">
+            <UclBadge text="PONTUAÇÃO OFICIAL" variant="gold" />
+            <span className="text-[10px] font-mono font-bold text-cyan-300/70 tracking-widest uppercase">UEFA RANKING CONTROL</span>
+          </div>
+          <h3 className="text-xl sm:text-2xl font-black font-display text-white uppercase flex items-center gap-2">
+            <UclStarball className="w-6 h-6 text-cyan-400" glow />
+            Gerenciar Pontuação da Copa
           </h3>
-          <p className="text-xs text-neutral-400 font-bold uppercase tracking-wider mt-0.5">
-            Ajustes manuais de pontuação ou reinicialização de campeonato
+          <p className="text-xs text-slate-300 font-medium mt-0.5">
+            Ajustes manuais de pontuação dos participantes ou reinicialização de campeonato oficial
           </p>
         </div>
 
@@ -171,54 +176,61 @@ export default function AdminScores() {
           type="button"
           onClick={handleResetAllScores}
           disabled={resettingTournament}
-          className="self-start sm:self-auto px-3.5 py-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 rounded-lg text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer"
+          className="self-start sm:self-auto px-4 py-2.5 bg-rose-950/80 hover:bg-rose-900 border border-rose-500/40 text-rose-300 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer shadow-md shadow-rose-950/50"
         >
-          <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+          <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
           {resettingTournament ? 'Zerando Pontuações...' : 'Zerar Pontuações & Novo Campeonato'}
         </button>
       </div>
 
       {errorMsg && (
-        <div className="p-3 bg-rose-50 border border-rose-100 text-rose-800 rounded-lg text-xs flex items-center gap-2">
-          <ShieldAlert className="w-4 h-4 shrink-0 text-rose-500" />
+        <div className="p-4 bg-rose-950/80 border border-rose-500/40 text-rose-200 rounded-xl text-xs flex items-center gap-2.5 font-bold shadow-lg">
+          <ShieldAlert className="w-4 h-4 shrink-0 text-rose-400" />
           <span>{errorMsg}</span>
         </div>
       )}
       {successMsg && (
-        <div className="p-3 bg-emerald-50 border border-emerald-100 text-emerald-800 rounded-lg text-xs flex items-center gap-2">
-          <Star className="w-4 h-4 shrink-0 text-emerald-500 animate-bounce" />
+        <div className="p-4 bg-emerald-950/80 border border-emerald-500/40 text-emerald-200 rounded-xl text-xs flex items-center gap-2.5 font-bold shadow-lg">
+          <Star className="w-4 h-4 shrink-0 text-emerald-400 animate-bounce" />
           <span>{successMsg}</span>
         </div>
       )}
 
       {/* Manual points change form */}
-      <div className="bg-white rounded-xl border border-neutral-150 p-5 shadow-xs max-w-xl">
-        <h4 className="text-sm font-semibold text-neutral-700 mb-4">Ajustar Pontuação Manualmente</h4>
+      <div className="bg-[#080f33]/90 rounded-2xl border border-cyan-500/25 p-6 shadow-2xl backdrop-blur-md max-w-xl">
+        <h4 className="text-sm font-black text-white uppercase tracking-tight mb-4 flex items-center gap-2">
+          <UclStarball className="w-4 h-4 text-cyan-400" />
+          Ajustar Pontuação Manualmente
+        </h4>
         <form onSubmit={handleAdjustScore} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label htmlFor="select-participant" className="block text-xs font-semibold text-neutral-550 mb-1">Participante</label>
+              <label htmlFor="select-participant" className="block text-xs font-bold text-cyan-300 mb-1">
+                Participante
+              </label>
               <select
                 id="select-participant"
                 value={selectedP}
                 onChange={(e) => setSelectedP(e.target.value)}
-                className="w-full px-3 py-1.5 bg-neutral-50 border border-neutral-200 rounded-md text-xs text-neutral-800 focus:outline-hidden"
+                className="w-full px-3 py-2 bg-[#050b28] border border-cyan-500/30 rounded-xl text-xs font-bold text-white focus:outline-hidden focus:ring-2 focus:ring-cyan-400"
               >
                 {participants.map(p => (
-                  <option key={p.id} value={p.id}>{p.nome} ({p.pontos} Pts)</option>
+                  <option key={p.id} value={p.id} className="bg-[#080f33] text-white">
+                    {p.nome} ({p.pontos} Pts)
+                  </option>
                 ))}
               </select>
             </div>
             <div>
-              <label className="block text-xs font-semibold text-neutral-550 mb-1">Operação</label>
+              <label className="block text-xs font-bold text-cyan-300 mb-1">Operação</label>
               <div className="flex gap-2">
                 <button
                   type="button"
                   onClick={() => setAction('add')}
-                  className={`flex-1 text-center py-1.5 border rounded-md text-xs font-medium cursor-pointer transition-all ${
+                  className={`flex-1 text-center py-2 border rounded-xl text-xs font-black uppercase tracking-wider cursor-pointer transition-all ${
                     action === 'add' 
-                      ? 'bg-neutral-900 border-neutral-950 text-white' 
-                      : 'bg-white border-neutral-200 text-neutral-700'
+                      ? 'bg-gradient-to-r from-cyan-500 to-blue-600 border-cyan-300 text-white shadow-md shadow-cyan-950/60' 
+                      : 'bg-[#050b28] border-cyan-500/25 text-slate-300 hover:text-white'
                   }`}
                 >
                   Adicionar
@@ -226,10 +238,10 @@ export default function AdminScores() {
                 <button
                   type="button"
                   onClick={() => setAction('subtract')}
-                  className={`flex-1 text-center py-1.5 border rounded-md text-xs font-medium cursor-pointer transition-all ${
+                  className={`flex-1 text-center py-2 border rounded-xl text-xs font-black uppercase tracking-wider cursor-pointer transition-all ${
                     action === 'subtract' 
-                      ? 'bg-neutral-900 border-neutral-950 text-white' 
-                      : 'bg-white border-neutral-200 text-neutral-700'
+                      ? 'bg-gradient-to-r from-rose-600 to-red-700 border-rose-400 text-white shadow-md shadow-rose-950/60' 
+                      : 'bg-[#050b28] border-cyan-500/25 text-slate-300 hover:text-white'
                   }`}
                 >
                   Remover
@@ -240,7 +252,7 @@ export default function AdminScores() {
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="sm:col-span-1">
-              <label htmlFor="points-val" className="block text-xs font-semibold text-neutral-550 mb-1">Quantidade de Pontos</label>
+              <label htmlFor="points-val" className="block text-xs font-bold text-cyan-300 mb-1">Quantidade de Pontos</label>
               <input
                 id="points-val"
                 type="number"
@@ -248,18 +260,18 @@ export default function AdminScores() {
                 placeholder="Ex: 5"
                 value={pointsAmount || ''}
                 onChange={(e) => setPointsAmount(parseInt(e.target.value, 10) || 0)}
-                className="w-full px-3 py-1.5 bg-neutral-50 border border-neutral-200 rounded-md text-xs focus:outline-hidden text-neutral-800"
+                className="w-full px-3 py-2 bg-[#050b28] border border-cyan-500/30 rounded-xl text-xs font-mono font-bold text-white focus:outline-hidden focus:ring-2 focus:ring-cyan-400"
               />
             </div>
             <div className="sm:col-span-2">
-              <label htmlFor="reason-val" className="block text-xs font-semibold text-neutral-550 mb-1">Motivo / Justificativa</label>
+              <label htmlFor="reason-val" className="block text-xs font-bold text-cyan-300 mb-1">Motivo / Justificativa</label>
               <input
                 id="reason-val"
                 type="text"
                 placeholder="Ex: Correção de lançamento / Bônus"
                 value={motivo}
                 onChange={(e) => setMotivo(e.target.value)}
-                className="w-full px-3 py-1.5 bg-neutral-50 border border-neutral-200 rounded-md text-xs focus:outline-hidden text-neutral-800"
+                className="w-full px-3 py-2 bg-[#050b28] border border-cyan-500/30 rounded-xl text-xs font-medium text-white focus:outline-hidden focus:ring-2 focus:ring-cyan-400"
               />
             </div>
           </div>
@@ -267,7 +279,7 @@ export default function AdminScores() {
           <button
             type="submit"
             disabled={submitting || participants.length === 0}
-            className="w-full sm:w-auto px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-white rounded-lg text-xs font-medium transition-colors cursor-pointer disabled:bg-neutral-200"
+            className="w-full sm:w-auto px-6 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer disabled:opacity-40 shadow-md shadow-cyan-950/60"
           >
             {submitting ? 'Salvando...' : 'Aplicar Ajuste'}
           </button>
@@ -275,36 +287,38 @@ export default function AdminScores() {
       </div>
 
       {/* Point history logs */}
-      <div className="bg-white rounded-xl border border-neutral-150 overflow-hidden shadow-xs">
-        <div className="px-5 py-3 border-b border-neutral-100 bg-neutral-50/50 flex items-center gap-2">
-          <History className="w-4 h-4 text-neutral-400" />
-          <span className="text-[10px] font-mono text-neutral-400 uppercase tracking-wider">Histórico de Ajustes e Lançamentos</span>
+      <div className="bg-[#080f33]/90 rounded-2xl border border-cyan-500/25 overflow-hidden shadow-2xl backdrop-blur-md">
+        <div className="px-6 py-4 border-b border-cyan-500/20 bg-[#050b28]/60 flex items-center gap-2">
+          <History className="w-4 h-4 text-cyan-400" />
+          <span className="text-[10px] font-mono text-cyan-300 uppercase tracking-widest font-bold">
+            Histórico Oficial de Ajustes e Lançamentos
+          </span>
         </div>
 
         {loading ? (
-          <div className="p-8 text-center text-sm text-neutral-400 font-mono">Carregando logs...</div>
+          <div className="p-8 text-center text-sm text-slate-400 font-mono">Carregando logs...</div>
         ) : history.length === 0 ? (
-          <div className="p-8 text-center text-sm text-neutral-400">Nenhum ajuste ou lançamento registrado ainda.</div>
+          <div className="p-8 text-center text-sm text-slate-400">Nenhum ajuste ou lançamento registrado ainda.</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left font-sans border-collapse">
               <thead>
-                <tr className="border-b border-neutral-100 text-[10px] font-mono uppercase text-neutral-400 bg-neutral-50/20">
-                  <th className="px-5 py-2.5 font-medium">Participante</th>
-                  <th className="px-5 py-2.5 font-medium">Valor</th>
-                  <th className="px-5 py-2.5 font-medium">Motivo</th>
-                  <th className="px-5 py-2.5 font-medium text-right">Data/Hora</th>
+                <tr className="border-b border-cyan-500/20 text-[10px] font-mono uppercase text-cyan-300/80 bg-[#050b28]/80">
+                  <th className="px-5 py-3 font-bold">Participante</th>
+                  <th className="px-5 py-3 font-bold">Valor</th>
+                  <th className="px-5 py-3 font-bold">Motivo</th>
+                  <th className="px-5 py-3 font-bold text-right">Data/Hora</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-neutral-100 text-xs">
+              <tbody className="divide-y divide-cyan-500/10 text-xs">
                 {history.map((log) => (
-                  <tr key={log.id} className="hover:bg-neutral-50/35">
-                    <td className="px-5 py-3 font-semibold text-neutral-800">{log.participante}</td>
-                    <td className="px-5 py-3">
-                      <span className={`inline-flex items-center gap-0.5 font-mono font-bold px-1.5 py-0.5 rounded-sm ${
+                  <tr key={log.id} className="hover:bg-cyan-950/20 transition-colors">
+                    <td className="px-5 py-3.5 font-bold text-white">{log.participante}</td>
+                    <td className="px-5 py-3.5">
+                      <span className={`inline-flex items-center gap-0.5 font-mono font-bold px-2 py-0.5 rounded-md text-xs ${
                         log.pontos > 0 
-                          ? 'bg-emerald-50 text-emerald-700' 
-                          : 'bg-rose-50 text-rose-700'
+                          ? 'bg-cyan-950/90 text-cyan-300 border border-cyan-400/40' 
+                          : 'bg-rose-950/90 text-rose-300 border border-rose-500/40'
                       }`}>
                         {log.pontos > 0 ? (
                           <ChevronUp className="w-3.5 h-3.5 shrink-0" />
@@ -314,8 +328,8 @@ export default function AdminScores() {
                         {log.pontos > 0 ? `+${log.pontos}` : log.pontos} pts
                       </span>
                     </td>
-                    <td className="px-5 py-3 text-neutral-600 font-medium">{log.motivo}</td>
-                    <td className="px-5 py-3 text-right text-neutral-400 font-mono">{formatDateTime(log.data_hora)}</td>
+                    <td className="px-5 py-3.5 text-slate-300 font-medium">{log.motivo}</td>
+                    <td className="px-5 py-3.5 text-right text-cyan-300/60 font-mono text-[11px]">{formatDateTime(log.data_hora)}</td>
                   </tr>
                 ))}
               </tbody>

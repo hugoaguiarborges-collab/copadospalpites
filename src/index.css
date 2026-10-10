@@ -10,23 +10,24 @@
 /* Custom minimal overrides */
 body {
   font-family: var(--font-sans);
-  background-color: #fcfcfc;
-  color: #171717;
+  background-color: #030719;
+  color: #f8fafc;
   -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
 }
 
-/* Scrollbar styling */
+/* Scrollbar styling - UEFA Champions League theme */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: transparent;
+  background: #050b24;
 }
 ::-webkit-scrollbar-thumb {
-  background: #e5e5e5;
+  background: #1e2c66;
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #d4d4d4;
+  background: #00f0ff;
 }

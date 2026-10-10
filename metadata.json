@@ -1,6 +1,6 @@
 {
-  "name": "Copa dos Palpites",
-  "description": "Sistema de palpites esportivos com sigilo absoluto garantido do fechamento do mercado.",
+  "name": "UEFA Champions League - Copa dos Palpites",
+  "description": "Copa dos Palpites com temática oficial da UEFA Champions League, 36 clubes europeus e 50 rodadas.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

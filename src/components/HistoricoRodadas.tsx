@@ -32,6 +32,7 @@ import {
   ListFilter,
   TrendingUp
 } from 'lucide-react';
+import { UclStarball, UclTrophy, UclBadge } from './UclAssets';
 
 interface HistoricoRodadasProps {
   initialRoundId?: string;
@@ -240,37 +241,42 @@ export default function HistoricoRodadas({ initialRoundId }: HistoricoRodadasPro
 
   return (
     <div className="space-y-6">
-      {/* Cabeçalho da página */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-neutral-200 pb-4 gap-4">
+      {/* Cabeçalho da página - Champions League Matchday */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-cyan-500/20 pb-4 gap-4">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-6 bg-[#009739] block rounded-sm"></span>
-            <h1 className="text-2xl font-black tracking-tight text-neutral-800 uppercase">
-              Palpites de Rodadas Anteriores & Pontuações
-            </h1>
+          <div className="flex items-center gap-2 mb-1">
+            <UclBadge text="UEFA MATCH ARCHIVE" variant="cyan" />
+            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider font-mono">
+              APURAÇÃO OFICIAL
+            </span>
           </div>
-          <p className="text-xs text-neutral-400 mt-1 uppercase tracking-widest font-bold">
-            Consulte os palpites revelados, placares oficiais e a discriminação exata de pontos conquistados por jogo.
+          <h1 className="text-2xl font-black tracking-tight text-white uppercase flex items-center gap-2.5 font-display drop-shadow-sm">
+            <div className="w-2.5 h-6 bg-gradient-to-b from-cyan-400 to-blue-600 rounded-xs shadow-xs" />
+            Palpites & Resultados Oficiais
+          </h1>
+          <p className="text-xs text-slate-400 mt-1 uppercase tracking-wider font-semibold font-mono">
+            Consulte os palpites revelados, placares oficiais da UEFA e a discriminação de pontos por jogo.
           </p>
         </div>
 
-        {/* Seletor rápido de rodada */}
-        <div className="flex items-center gap-2 bg-neutral-100 p-1.5 rounded-xl border border-neutral-200">
-          <label htmlFor="round-select-history" className="text-xs font-bold text-neutral-600 pl-2">
+        {/* Seletor rápido de rodada - UCL Style */}
+        <div className="flex items-center gap-2 bg-[#050b28] p-1.5 rounded-xl border border-cyan-500/35 shadow-lg shadow-cyan-950/50">
+          <label htmlFor="round-select-history" className="text-xs font-bold text-cyan-400 pl-2 font-mono flex items-center gap-1">
+            <UclStarball className="w-3.5 h-3.5 text-cyan-400" />
             Rodada:
           </label>
           <select
             id="round-select-history"
             value={selectedRoundId}
             onChange={(e) => setSelectedRoundId(e.target.value)}
-            className="bg-white border border-neutral-300 rounded-lg px-3 py-1.5 text-xs font-black text-neutral-800 focus:outline-hidden focus:ring-2 focus:ring-[#009739]"
+            className="bg-[#030617] border border-cyan-500/40 hover:border-cyan-400 rounded-lg px-3 py-1.5 text-xs font-black text-white focus:outline-hidden cursor-pointer"
           >
             {rounds.map(r => {
               const rNum = getRoundNumber(r.nome || r.id);
               const isEncerrada = r.status === 'encerrada';
               const isTest = r.is_test || r.id === 'rodada-teste';
               return (
-                <option key={r.id} value={r.id}>
+                <option key={r.id} value={r.id} className="bg-[#030617] text-white">
                   {isTest ? '🧪 [TESTE] ' : ''}{r.nome} {isEncerrada ? '(Encerrada e Apurada)' : '(Em andamento)'}
                 </option>
               );
@@ -279,83 +285,84 @@ export default function HistoricoRodadas({ initialRoundId }: HistoricoRodadasPro
         </div>
       </div>
 
-      {/* Banner da Rodada Selecionada */}
+      {/* Banner da Rodada Selecionada - UEFA Champions League Match Center */}
       {currentRound && (
-        <div className="bg-white border-2 border-neutral-200 rounded-2xl p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="bg-[#080f33]/90 border border-cyan-500/25 rounded-2xl p-5 shadow-2xl backdrop-blur-md flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-black uppercase ${
+              <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-black uppercase font-mono ${
                 currentRound.status === 'encerrada'
-                  ? 'bg-neutral-900 text-white'
-                  : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                  ? 'bg-cyan-950/90 text-cyan-300 border border-cyan-500/40'
+                  : 'bg-emerald-950/90 text-emerald-300 border border-emerald-500/40'
               }`}>
                 {currentRound.status === 'encerrada' ? (
                   <>
-                    <Lock className="w-3 h-3 text-rose-400" />
+                    <Lock className="w-3 h-3 text-cyan-400" />
                     Rodada Encerrada & Apurada
                   </>
                 ) : (
                   <>
-                    <Unlock className="w-3 h-3 text-emerald-600" />
+                    <Unlock className="w-3 h-3 text-emerald-400" />
                     Mercado Aberto
                   </>
                 )}
               </span>
-              <span className="text-xs text-neutral-400 font-bold font-mono">
+              <span className="text-xs text-slate-400 font-bold font-mono">
                 ID: {currentRound.id}
               </span>
             </div>
-            <h2 className="text-xl font-black text-neutral-900 uppercase">
+            <h2 className="text-xl font-black text-white uppercase font-display flex items-center gap-2">
+              <UclStarball className="w-5 h-5 text-cyan-400" />
               {currentRound.nome}
             </h2>
-            <p className="text-xs text-neutral-500 mt-0.5 font-medium">
-              Fechamento oficial de mercado: <strong className="text-neutral-700">Terça-feira às 13:00</strong> ({formatDateTimeDisplay(currentRound.fechamento)})
+            <p className="text-xs text-slate-300 mt-0.5 font-medium">
+              Fechamento oficial de mercado: <strong className="text-cyan-300">Terça-feira às 13:00</strong> ({formatDateTimeDisplay(currentRound.fechamento)})
             </p>
           </div>
 
-          {/* KPI Cards Rápidos */}
+          {/* KPI Cards Rápidos - UEFA Style */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 shrink-0">
-            <div className="bg-neutral-50 border border-neutral-200 rounded-xl p-3 text-center min-w-[90px]">
-              <span className="text-[10px] text-neutral-400 font-bold uppercase block">Palpitaram</span>
-              <span className="text-lg font-black font-mono text-neutral-800">{roundStats.totalPalpitaram}</span>
+            <div className="bg-[#050b28] border border-cyan-500/25 rounded-xl p-3 text-center min-w-[90px] shadow-inner">
+              <span className="text-[10px] text-slate-400 font-bold uppercase block font-mono">Palpitaram</span>
+              <span className="text-lg font-black font-mono text-white">{roundStats.totalPalpitaram}</span>
             </div>
-            <div className="bg-neutral-50 border border-neutral-200 rounded-xl p-3 text-center min-w-[90px]">
-              <span className="text-[10px] text-neutral-400 font-bold uppercase block">Jogos Oficiais</span>
-              <span className="text-lg font-black font-mono text-neutral-800">{officialGames.length}</span>
+            <div className="bg-[#050b28] border border-cyan-500/25 rounded-xl p-3 text-center min-w-[90px] shadow-inner">
+              <span className="text-[10px] text-slate-400 font-bold uppercase block font-mono">Jogos Oficiais</span>
+              <span className="text-lg font-black font-mono text-cyan-300">{officialGames.length}</span>
             </div>
-            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-center min-w-[90px]">
-              <span className="text-[10px] text-emerald-700 font-bold uppercase block">Média Pts</span>
-              <span className="text-lg font-black font-mono text-emerald-800">{roundStats.mediaPontos}</span>
+            <div className="bg-[#050b28] border border-cyan-500/35 rounded-xl p-3 text-center min-w-[90px] shadow-inner">
+              <span className="text-[10px] text-cyan-300 font-bold uppercase block font-mono">Média Pts</span>
+              <span className="text-lg font-black font-mono text-cyan-200">{roundStats.mediaPontos}</span>
             </div>
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-center min-w-[90px]">
-              <span className="text-[10px] text-amber-700 font-bold uppercase block">Maior Pontuação</span>
-              <span className="text-lg font-black font-mono text-amber-800">+{roundStats.maiorPontuacao} pts</span>
+            <div className="bg-[#050b28] border border-amber-500/40 rounded-xl p-3 text-center min-w-[90px] shadow-inner">
+              <span className="text-[10px] text-amber-400 font-bold uppercase block font-mono">Maior Pontuação</span>
+              <span className="text-lg font-black font-mono text-amber-300">+{roundStats.maiorPontuacao} pts</span>
             </div>
           </div>
         </div>
       )}
 
-      {/* Jogos & Placares Oficiais desta Rodada */}
-      <div className="bg-gradient-to-r from-neutral-900 via-neutral-800 to-neutral-900 text-white rounded-2xl p-5 shadow-sm">
-        <div className="flex items-center justify-between pb-3 mb-3 border-b border-neutral-700">
+      {/* Jogos & Placares Oficiais desta Rodada - UEFA Broadcast Board */}
+      <div className="bg-gradient-to-r from-[#0a1442] via-[#050b28] to-[#04081c] border border-cyan-500/30 text-white rounded-2xl p-5 shadow-2xl">
+        <div className="flex items-center justify-between pb-3 mb-3 border-b border-cyan-500/20">
           <div className="flex items-center gap-2">
-            <Trophy className="w-4 h-4 text-amber-400" />
-            <h3 className="text-xs font-black uppercase tracking-wider text-amber-400">
-              Placares Oficiais da Rodada ({officialGames.length} jogos avaliados)
+            <UclTrophy className="w-5 h-5 text-cyan-300" />
+            <h3 className="text-xs font-black uppercase tracking-wider text-cyan-300 font-display">
+              Placares Oficiais dos Jogos ({officialGames.length} confrontos apurados)
             </h3>
           </div>
-          <span className="text-[10px] font-mono font-bold text-neutral-400 bg-neutral-800 px-2 py-0.5 rounded">
-            Atualização da Administração
+          <span className="text-[10px] font-mono font-bold text-slate-300 bg-[#050b28] px-2.5 py-0.5 rounded border border-cyan-500/30">
+            UEFA OFFICIAL RESULTS
           </span>
         </div>
 
         {officialGames.length === 0 ? (
-          <div className="py-6 text-center text-xs text-neutral-400">
-            <p className="font-semibold text-neutral-300 mb-1">
+          <div className="py-6 text-center text-xs text-slate-300">
+            <p className="font-semibold text-cyan-300 mb-1">
               ⏳ Nenhum placar oficial foi lançado para esta rodada ainda.
             </p>
-            <p className="text-[11px] text-neutral-400">
-              Assim que o administrador cadastrar os placares oficiais em <em>Administração &gt; Lançamento de Resultados</em>, a pontuação de todos será calculada e discriminada aqui automaticamente!
+            <p className="text-[11px] text-slate-400">
+              Assim que a administração cadastrar os placares oficiais dos 5 jogos europeus em <em>Administração &gt; Avaliar Palpites</em>, as pontuações serão calculadas e exibidas aqui instantaneamente!
             </p>
           </div>
         ) : (
@@ -363,25 +370,25 @@ export default function HistoricoRodadas({ initialRoundId }: HistoricoRodadasPro
             {officialGames.map((og, idx) => (
               <div 
                 key={idx} 
-                className="bg-neutral-800/90 border border-neutral-700 rounded-xl p-3 flex flex-col justify-between"
+                className="bg-[#050a24]/90 border border-cyan-500/30 rounded-xl p-3.5 flex flex-col justify-between shadow-lg"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="font-extrabold text-xs text-neutral-200 truncate flex-1">
+                  <span className="font-black text-xs text-white truncate flex-1 font-display">
                     {og.time_mandante}
                   </span>
-                  <div className="bg-black/60 px-2.5 py-1 rounded-lg border border-neutral-600 font-mono font-black text-sm text-amber-300 whitespace-nowrap">
+                  <div className="bg-[#030617] px-3 py-1 rounded-lg border border-cyan-400/50 font-mono font-black text-sm text-cyan-300 whitespace-nowrap shadow-inner">
                     {og.gols_mandante} x {og.gols_visitante}
                   </div>
-                  <span className="font-extrabold text-xs text-neutral-200 truncate flex-1 text-right">
+                  <span className="font-black text-xs text-white truncate flex-1 text-right font-display">
                     {og.time_visitante}
                   </span>
                 </div>
 
                 {og.gols_jogadores && og.gols_jogadores.length > 0 && (
-                  <div className="mt-2 pt-2 border-t border-neutral-700/60 text-[10px] text-neutral-400 flex flex-wrap gap-1 items-center">
-                    <span className="font-bold text-amber-400/90">⚽ Gols:</span>
+                  <div className="mt-2.5 pt-2 border-t border-cyan-950 text-[10px] text-slate-400 flex flex-wrap gap-1 items-center">
+                    <span className="font-bold text-cyan-400 font-mono">⚽ Gols:</span>
                     {og.gols_jogadores.map((gj, jIdx) => (
-                      <span key={jIdx} className="bg-neutral-900 px-1.5 py-0.5 rounded text-neutral-300 font-medium">
+                      <span key={jIdx} className="bg-[#070e30] border border-cyan-800/40 px-1.5 py-0.5 rounded text-slate-200 font-medium">
                         {gj.jogador} ({gj.gols})
                       </span>
                     ))}
@@ -393,87 +400,87 @@ export default function HistoricoRodadas({ initialRoundId }: HistoricoRodadasPro
         )}
       </div>
 
-      {/* Alternador de Visualização & Barra de Busca */}
-      <div className="bg-white border border-neutral-200 rounded-xl p-3 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs">
+      {/* Alternador de Visualização & Barra de Busca - UEFA Controls */}
+      <div className="bg-[#080f33]/90 border border-cyan-500/25 rounded-2xl p-3 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xl backdrop-blur-md">
         {/* Abas */}
-        <div className="flex items-center gap-1 w-full sm:w-auto">
+        <div className="flex items-center gap-1.5 w-full sm:w-auto flex-wrap">
           <button
             onClick={() => setActiveTab('detalhes')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+            className={`px-3 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
               activeTab === 'detalhes'
-                ? 'bg-[#009739] text-white shadow-xs'
-                : 'text-neutral-600 hover:text-neutral-900 bg-neutral-100'
+                ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-black shadow-md shadow-cyan-950/60 border border-cyan-300/40'
+                : 'text-slate-300 hover:text-white bg-[#050b28] border border-cyan-900/40'
             }`}
           >
-            <BarChart2 className="w-3.5 h-3.5" />
+            <BarChart2 className="w-3.5 h-3.5 text-cyan-300" />
             Palpites & Pontos por Jogo
           </button>
           <button
             onClick={() => setActiveTab('tabela_pontos')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+            className={`px-3 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
               activeTab === 'tabela_pontos'
-                ? 'bg-neutral-900 text-white shadow-xs'
-                : 'text-neutral-600 hover:text-neutral-900 bg-neutral-100'
+                ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-black shadow-md shadow-cyan-950/60 border border-cyan-300/40'
+                : 'text-slate-300 hover:text-white bg-[#050b28] border border-cyan-900/40'
             }`}
           >
-            <Trophy className="w-3.5 h-3.5" />
+            <Trophy className="w-3.5 h-3.5 text-amber-300" />
             Ranking da Rodada
           </button>
           <button
             onClick={() => setActiveTab('participacao')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+            className={`px-3 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
               activeTab === 'participacao'
-                ? 'bg-neutral-900 text-white shadow-xs'
-                : 'text-neutral-600 hover:text-neutral-900 bg-neutral-100'
+                ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-black shadow-md shadow-cyan-950/60 border border-cyan-300/40'
+                : 'text-slate-300 hover:text-white bg-[#050b28] border border-cyan-900/40'
             }`}
           >
-            <Users className="w-3.5 h-3.5" />
+            <Users className="w-3.5 h-3.5 text-cyan-400" />
             Quem Palpitou ({roundStats.totalPalpitaram})
           </button>
         </div>
 
         {/* Busca por participante */}
         <div className="relative w-full sm:w-64">
-          <Search className="w-4 h-4 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <Search className="w-4 h-4 text-cyan-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             placeholder="Buscar participante..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-3 py-1.5 bg-neutral-50 border border-neutral-200 rounded-lg text-xs font-medium text-neutral-800 focus:outline-hidden focus:ring-2 focus:ring-[#009739]"
-          >
-          </input>
+            className="w-full pl-9 pr-3 py-2 bg-[#050a24] border border-cyan-800/60 rounded-xl text-xs font-bold text-white placeholder:text-slate-500 focus:outline-hidden focus:ring-1 focus:ring-cyan-400 shadow-inner"
+          />
         </div>
       </div>
 
       {/* Conteúdo Principal de acordo com a aba selecionada */}
       {loadingRoundData ? (
-        <div className="py-16 text-center text-xs font-mono font-bold text-neutral-400 animate-pulse">
-          Carregando palpites e apurações da rodada...
+        <div className="py-16 text-center text-xs font-mono font-bold text-cyan-300 animate-pulse flex flex-col items-center gap-2">
+          <UclStarball className="w-8 h-8 animate-spin text-cyan-400" />
+          Carregando palpites e apurações da rodada UEFA...
         </div>
       ) : (!isMarketClosed && !currentRound?.is_test && activeTab !== 'participacao') ? (
         /* Sigilo Oficial durante a rodada aberta */
-        <div className="bg-white border-2 border-amber-200 rounded-2xl p-8 text-center space-y-4 shadow-xs">
-          <div className="w-16 h-16 bg-amber-50 border border-amber-200 rounded-2xl flex items-center justify-center mx-auto text-amber-600">
+        <div className="bg-[#080f33]/90 border border-cyan-500/30 rounded-2xl p-8 text-center space-y-4 shadow-2xl backdrop-blur-md">
+          <div className="w-16 h-16 bg-[#050b28] border border-cyan-500/40 rounded-2xl flex items-center justify-center mx-auto text-cyan-400 shadow-lg">
             <Lock className="w-8 h-8" />
           </div>
           <div>
-            <span className="text-[10px] font-mono font-black uppercase text-amber-600 bg-amber-100 px-2.5 py-0.5 rounded-full">
-              Sigilo Absoluto Ativo
+            <span className="text-[10px] font-mono font-black uppercase text-cyan-300 bg-cyan-950/80 border border-cyan-500/40 px-2.5 py-0.5 rounded-full">
+              Sigilo Absoluto UEFA
             </span>
-            <h3 className="text-xl font-black text-neutral-800 uppercase mt-2">
+            <h3 className="text-xl font-black text-white uppercase mt-2 font-display">
               Palpites Confidenciais durante o Mercado Aberto
             </h3>
-            <p className="text-xs text-neutral-500 max-w-lg mx-auto mt-2 leading-relaxed font-medium">
-              Os palpites de cada participante nesta rodada oficial permanecem em sigilo absoluto até o encerramento do mercado (<strong>terça-feira às 13:00</strong>) e o lançamento dos placares oficiais pela administração.
+            <p className="text-xs text-slate-300 max-w-lg mx-auto mt-2 leading-relaxed font-medium">
+              Os palpites de cada participante nesta rodada oficial permanecem em sigilo absoluto até o encerramento do mercado (<strong className="text-cyan-300">terça-feira às 13:00</strong>) e a apuração dos resultados oficiais.
             </p>
           </div>
           <div className="pt-2 flex justify-center">
             <button
               onClick={() => setActiveTab('participacao')}
-              className="px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer transition-colors flex items-center gap-2"
+              className="px-4 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-xl text-xs font-black uppercase tracking-wider cursor-pointer shadow-md shadow-cyan-950/60 flex items-center gap-2"
             >
-              <Users className="w-4 h-4 text-[#009739]" /> Ver Tabela de Participação (Quem Já Palpitou)
+              <Users className="w-4 h-4 text-white" /> Ver Tabela de Participação (Quem Já Palpitou)
             </button>
           </div>
         </div>
@@ -486,21 +493,21 @@ export default function HistoricoRodadas({ initialRoundId }: HistoricoRodadasPro
         />
       ) : activeTab === 'tabela_pontos' ? (
         /* Ranking da Rodada em Tabela Compacta */
-        <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden shadow-xs">
-          <div className="px-5 py-3 border-b border-neutral-200 bg-neutral-50 flex items-center justify-between">
-            <h3 className="font-bold text-neutral-800 text-xs uppercase tracking-wider flex items-center gap-2">
-              <Trophy className="w-4 h-4 text-[#009739]" />
+        <div className="bg-[#080f33]/90 border border-cyan-500/25 rounded-2xl overflow-hidden shadow-2xl backdrop-blur-md">
+          <div className="px-5 py-3.5 border-b border-cyan-500/20 bg-[#050b28]/90 flex items-center justify-between">
+            <h3 className="font-bold text-white text-xs uppercase tracking-wider flex items-center gap-2 font-display">
+              <UclTrophy className="w-4 h-4 text-amber-300" />
               Pontuação Conquistada na {currentRound?.nome}
             </h3>
-            <span className="text-[10px] font-mono text-neutral-500 font-bold">
+            <span className="text-[10px] font-mono text-cyan-300 font-bold bg-cyan-950/80 px-2.5 py-0.5 rounded border border-cyan-500/30">
               {filteredBreakdown.length} participantes
             </span>
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
+            <table className="w-full text-left text-xs border-collapse">
               <thead>
-                <tr className="bg-neutral-100/60 border-b border-neutral-200 text-neutral-500 font-bold uppercase tracking-wider text-[11px]">
+                <tr className="bg-[#040822]/80 border-b border-cyan-950 text-slate-400 font-bold uppercase tracking-wider text-[10px] font-mono">
                   <th className="py-3 px-4 w-14 text-center">Pos</th>
                   <th className="py-3 px-4">Participante</th>
                   <th className="py-3 px-4 text-center">Acertos Resultado (+3)</th>
@@ -509,46 +516,46 @@ export default function HistoricoRodadas({ initialRoundId }: HistoricoRodadasPro
                   <th className="py-3 px-4 text-right">Pontos na Rodada</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-neutral-150">
+              <tbody className="divide-y divide-cyan-950/70">
                 {filteredBreakdown.map((item, index) => {
                   const isTopOne = index === 0 && item.totalPontos > 0;
                   return (
                     <tr 
                       key={item.participante}
-                      className={`hover:bg-neutral-50/70 transition-colors ${
-                        isTopOne ? 'bg-amber-50/20' : ''
+                      className={`hover:bg-cyan-950/40 transition-colors ${
+                        isTopOne ? 'bg-gradient-to-r from-[#172554]/40 to-transparent' : ''
                       }`}
                     >
-                      <td className="py-3 px-4 text-center font-mono font-black text-neutral-500">
+                      <td className="py-3 px-4 text-center font-mono font-black text-cyan-300">
                         {isTopOne ? '👑 1º' : `${index + 1}º`}
                       </td>
                       <td className="py-3 px-4">
                         <button
                           onClick={() => setSelectedProfileParticipant(item.participante)}
-                          className="font-bold text-neutral-900 text-sm hover:text-[#009739] transition-colors flex items-center gap-1.5 cursor-pointer text-left group"
+                          className="font-bold text-white text-sm hover:text-cyan-300 transition-colors flex items-center gap-1.5 cursor-pointer text-left group"
                           title="Clique para ver o perfil completo deste participante"
                         >
                           <span className="group-hover:underline">{item.participante}</span>
-                          <TrendingUp className="w-3.5 h-3.5 text-neutral-400 group-hover:text-[#009739]" />
+                          <TrendingUp className="w-3.5 h-3.5 text-cyan-400 group-hover:text-cyan-200" />
                         </button>
                       </td>
                       <td className="py-3 px-4 text-center">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-emerald-950/80 text-emerald-300 border border-emerald-500/40">
                           {item.totalAcertosResultado}x (+{item.totalPontosResultado} pts)
                         </span>
                       </td>
                       <td className="py-3 px-4 text-center">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-mono font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-cyan-950/80 text-cyan-300 border border-cyan-500/40">
                           {item.totalAcertosPlacar}x (+{item.totalPontosPlacar} pts)
                         </span>
                       </td>
                       <td className="py-3 px-4 text-center">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-mono font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-amber-950/80 text-amber-300 border border-amber-500/40">
                           {item.totalGolsCapitao} gols (+{item.totalPontosCapitao} pts)
                         </span>
                       </td>
                       <td className="py-3 px-4 text-right">
-                        <span className="font-mono font-black text-base text-neutral-900">
+                        <span className="font-mono font-black text-base text-cyan-300">
                           +{item.totalPontos} PTS
                         </span>
                       </td>
@@ -558,7 +565,7 @@ export default function HistoricoRodadas({ initialRoundId }: HistoricoRodadasPro
 
                 {filteredBreakdown.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="py-8 text-center text-neutral-400 text-xs">
+                    <td colSpan={6} className="py-8 text-center text-slate-400 text-xs font-mono">
                       Nenhum palpite encontrado para esta rodada.
                     </td>
                   </tr>
@@ -568,14 +575,14 @@ export default function HistoricoRodadas({ initialRoundId }: HistoricoRodadasPro
           </div>
         </div>
       ) : (
-        /* VISUALIZAÇÃO PRINCIPAL: CARDS COM DISCRIMINAÇÃO DETALHADA POR JOGO */
+        /* VISUALIZAÇÃO PRINCIPAL: CARDS COM DISCRIMINAÇÃO DETALHADA POR JOGO - UEFA Broadcast */
         <div className="space-y-4">
-          <div className="flex items-center justify-between text-xs text-neutral-500 font-semibold px-1">
+          <div className="flex items-center justify-between text-xs text-slate-400 font-semibold px-1">
             <span>
-              Mostrando <strong className="text-neutral-800">{filteredBreakdown.length}</strong> participantes que enviaram palpites
+              Mostrando <strong className="text-white">{filteredBreakdown.length}</strong> participantes que enviaram palpites
             </span>
-            <span className="text-[11px] text-neutral-400">
-              💡 Pontuação diferenciada por acerto de resultado (+3), placar exato (+2) e capitão (+1/gol).
+            <span className="text-[11px] text-cyan-400 font-mono">
+              ★ Resultado (+3) • Placar Exato (+2) • Capitão (+1/gol)
             </span>
           </div>
 
@@ -586,20 +593,20 @@ export default function HistoricoRodadas({ initialRoundId }: HistoricoRodadasPro
               return (
                 <div 
                   key={item.participante} 
-                  className={`bg-white border-2 rounded-2xl p-5 shadow-xs transition-all flex flex-col justify-between ${
+                  className={`bg-[#080f33]/90 border rounded-2xl p-5 shadow-2xl transition-all flex flex-col justify-between backdrop-blur-md ${
                     isFirst 
-                      ? 'border-amber-300 ring-2 ring-amber-100' 
-                      : 'border-neutral-200 hover:border-neutral-300'
+                      ? 'border-amber-400/50 shadow-amber-950/40' 
+                      : 'border-cyan-500/25 hover:border-cyan-400/50'
                   }`}
                 >
                   {/* Topo do Card do Participante */}
                   <div>
-                    <div className="flex items-center justify-between pb-3 mb-4 border-b border-neutral-100">
+                    <div className="flex items-center justify-between pb-3 mb-4 border-b border-cyan-500/20">
                       <div className="flex items-center gap-3">
-                        <div className={`w-9 h-9 rounded-full flex items-center justify-center font-black text-sm uppercase ${
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm uppercase shadow-md ${
                           isFirst 
-                            ? 'bg-amber-100 text-amber-800 border-2 border-amber-300' 
-                            : 'bg-neutral-100 text-neutral-700 border border-neutral-200'
+                            ? 'bg-gradient-to-b from-amber-400 to-amber-600 text-black border border-amber-300' 
+                            : 'bg-gradient-to-b from-[#0b1747] to-[#04081c] text-cyan-300 border border-cyan-500/40'
                         }`}>
                           {item.participante.charAt(0)}
                         </div>
@@ -607,61 +614,61 @@ export default function HistoricoRodadas({ initialRoundId }: HistoricoRodadasPro
                           <div className="flex items-center gap-2">
                             <button
                               onClick={() => setSelectedProfileParticipant(item.participante)}
-                              className="font-extrabold text-neutral-900 text-base hover:text-[#009739] transition-colors flex items-center gap-1.5 cursor-pointer text-left group"
+                              className="font-black text-white text-base hover:text-cyan-300 transition-colors flex items-center gap-1.5 cursor-pointer text-left group font-display"
                               title="Clique para ver o perfil completo deste participante"
                             >
                               <span className="group-hover:underline">{item.participante}</span>
-                              <span className="text-[10px] bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 rounded font-black tracking-wider uppercase">
+                              <span className="text-[9px] bg-cyan-950 text-cyan-300 border border-cyan-500/40 px-1.5 py-0.5 rounded font-black tracking-wider uppercase font-mono">
                                 Perfil ➔
                               </span>
                             </button>
                             {isFirst && (
-                              <span className="bg-amber-100 text-amber-800 text-[10px] font-black px-1.5 py-0.5 rounded uppercase">
+                              <span className="bg-amber-400/20 text-amber-300 border border-amber-400/40 text-[9px] font-black px-1.5 py-0.5 rounded uppercase font-mono">
                                 ★ Líder da Rodada
                               </span>
                             )}
                           </div>
-                          <span className="text-[11px] text-neutral-400 font-mono">
-                            {item.jogosAvaliados.length} palpites registrados
+                          <span className="text-[11px] text-slate-400 font-mono">
+                            {item.jogosAvaliados.length} confrontos palpitados
                           </span>
                         </div>
                       </div>
 
-                      {/* DESTAQUE GIGANTE DOS PONTOS GANHOS NESTA RODADA */}
+                      {/* DESTAQUE DOS PONTOS GANHOS NESTA RODADA */}
                       <div className="text-right">
-                        <span className="text-[10px] text-neutral-400 uppercase font-black tracking-wider block">
+                        <span className="text-[9px] text-slate-400 uppercase font-black tracking-wider block font-mono">
                           Ganho na Rodada
                         </span>
                         <div className={`font-mono font-black text-xl sm:text-2xl leading-none ${
-                          item.totalPontos > 0 ? 'text-[#009739]' : 'text-neutral-500'
+                          item.totalPontos > 0 ? 'text-cyan-300 drop-shadow-[0_0_8px_rgba(0,240,255,0.4)]' : 'text-slate-500'
                         }`}>
                           +{item.totalPontos} <span className="text-xs">PTS</span>
                         </div>
                       </div>
                     </div>
 
-                    {/* Resumo rápido de badges de acerto do participante */}
+                    {/* Resumo de badges de acerto do participante */}
                     <div className="flex flex-wrap gap-1.5 mb-4 text-[11px]">
                       {item.totalAcertosResultado > 0 && (
-                        <span className="px-2 py-0.5 rounded-md font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
-                          <CheckCircle2 className="w-3 h-3" />
+                        <span className="px-2 py-0.5 rounded-md font-bold bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 flex items-center gap-1 font-mono">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-400" />
                           {item.totalAcertosResultado}x Resultado (+{item.totalPontosResultado} pts)
                         </span>
                       )}
                       {item.totalAcertosPlacar > 0 && (
-                        <span className="px-2 py-0.5 rounded-md font-bold bg-blue-50 text-blue-700 border border-blue-200 flex items-center gap-1">
-                          <Trophy className="w-3 h-3" />
+                        <span className="px-2 py-0.5 rounded-md font-bold bg-cyan-950/80 text-cyan-300 border border-cyan-500/40 flex items-center gap-1 font-mono">
+                          <UclTrophy className="w-3 h-3 text-cyan-400" />
                           {item.totalAcertosPlacar}x Placar Exato (+{item.totalPontosPlacar} pts)
                         </span>
                       )}
                       {item.totalPontosCapitao > 0 && (
-                        <span className="px-2 py-0.5 rounded-md font-bold bg-amber-50 text-amber-800 border border-amber-200 flex items-center gap-1">
-                          <Star className="w-3 h-3 text-amber-500 fill-amber-500" />
+                        <span className="px-2 py-0.5 rounded-md font-bold bg-amber-950/80 text-amber-300 border border-amber-500/40 flex items-center gap-1 font-mono">
+                          <Star className="w-3 h-3 text-amber-400 fill-amber-400" />
                           Capitão (+{item.totalPontosCapitao} pts)
                         </span>
                       )}
                       {item.totalPontos === 0 && (
-                        <span className="px-2 py-0.5 rounded-md font-bold bg-neutral-100 text-neutral-500 border border-neutral-200">
+                        <span className="px-2 py-0.5 rounded-md font-bold bg-[#050b28] text-slate-400 border border-cyan-950 font-mono">
                           Nenhum acerto nesta rodada (0 pts)
                         </span>
                       )}
@@ -679,17 +686,17 @@ export default function HistoricoRodadas({ initialRoundId }: HistoricoRodadasPro
                             key={jIdx} 
                             className={`p-3 rounded-xl border transition-colors ${
                               jogoEval.pontos > 0 
-                                ? 'bg-neutral-50/80 border-neutral-200' 
-                                : 'bg-neutral-50/40 border-neutral-150'
+                                ? 'bg-[#050c2c]/90 border-cyan-500/35' 
+                                : 'bg-[#04081c]/80 border-cyan-950/70'
                             }`}
                           >
                             {/* Confronto Real vs Palpite */}
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 mb-2 border-b border-neutral-200/60">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 mb-2 border-b border-cyan-950">
                               <div>
-                                <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block">
+                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block font-mono">
                                   Confronto Oficial
                                 </span>
-                                <div className="font-black text-neutral-900 text-xs sm:text-sm">
+                                <div className="font-black text-white text-xs sm:text-sm font-display">
                                   {jogoEval.resultadoRealFormatado !== '-' ? (
                                     <span>{jogoEval.resultadoRealFormatado}</span>
                                   ) : (
@@ -699,10 +706,10 @@ export default function HistoricoRodadas({ initialRoundId }: HistoricoRodadasPro
                               </div>
 
                               <div className="sm:text-right">
-                                <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block">
+                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block font-mono">
                                   Palpite de {item.participante}
                                 </span>
-                                <div className="font-extrabold text-[#009739] text-xs sm:text-sm">
+                                <div className="font-extrabold text-cyan-300 text-xs sm:text-sm font-mono">
                                   {jogoEval.guess.palpite}
                                 </div>
                               </div>
@@ -710,79 +717,74 @@ export default function HistoricoRodadas({ initialRoundId }: HistoricoRodadasPro
 
                             {/* Capitão do palpite */}
                             {jogoEval.nomeCapitao && (
-                              <div className="text-[11px] text-neutral-500 font-medium mb-2 flex items-center gap-1.5">
-                                <span className="text-neutral-400">Capitão indicado:</span>
-                                <strong className="text-neutral-800">{jogoEval.nomeCapitao}</strong>
+                              <div className="text-[11px] text-slate-300 font-medium mb-2 flex items-center gap-1.5 flex-wrap">
+                                <span className="text-slate-400">Capitão indicado:</span>
+                                <strong className="text-white">{jogoEval.nomeCapitao}</strong>
                                 {jogoEval.golsCapitao > 0 ? (
-                                  <span className="text-amber-700 font-bold bg-amber-100 px-1.5 py-0.2 rounded text-[10px]">
+                                  <span className="text-amber-300 font-bold bg-amber-950/80 border border-amber-500/40 px-1.5 py-0.2 rounded text-[10px] font-mono">
                                     ⚽ Marcou {jogoEval.golsCapitao} gol(s)! (+{jogoEval.pontosCapitao} pts)
                                   </span>
                                 ) : (
-                                  <span className="text-neutral-400 text-[10px]">
+                                  <span className="text-slate-500 text-[10px] font-mono">
                                     (0 gols)
                                   </span>
                                 )}
                               </div>
                             )}
 
-                            {/* DISCRIMINAÇÃO DOS PONTOS DESTE JOGO (Conforme solicitado pelo usuário!) */}
+                            {/* DISCRIMINAÇÃO DOS PONTOS DESTE JOGO */}
                             <div className="pt-1 flex flex-wrap items-center justify-between gap-2">
                               <div className="flex flex-wrap gap-1">
-                                {/* Badge de Acerto de Resultado */}
                                 {acertouRes && !acertouPlac && (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                                    <Check className="w-3 h-3 text-emerald-600" />
-                                    Acertou o Resultado (+3 pts)
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 font-mono">
+                                    <Check className="w-3 h-3 text-emerald-400" />
+                                    Acertou Resultado (+3 pts)
                                   </span>
                                 )}
 
-                                {/* Badge de Acerto de Placar Exato */}
                                 {acertouPlac && !jogoEval.isSpecialZeroZero && (
                                   <>
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                                      <Check className="w-3 h-3 text-emerald-600" />
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 font-mono">
+                                      <Check className="w-3 h-3 text-emerald-400" />
                                       Resultado (+3 pts)
                                     </span>
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-black bg-blue-100 text-blue-800 border border-blue-300">
-                                      <Trophy className="w-3 h-3 text-blue-600" />
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black bg-cyan-950/80 text-cyan-300 border border-cyan-500/40 font-mono">
+                                      <UclTrophy className="w-3 h-3 text-cyan-400" />
                                       Placar Exato (+2 pts)
                                     </span>
                                   </>
                                 )}
 
-                                {/* Caso Especial 0x0 */}
                                 {jogoEval.isSpecialZeroZero && (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-black bg-purple-100 text-purple-800 border border-purple-300">
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black bg-cyan-950/80 text-cyan-300 border border-cyan-500/40 font-mono">
                                     ⭐ Placar 0x0 Exato (+{jogoEval.pontos} pts)
                                   </span>
                                 )}
 
-                                {/* Bônus de Capitão */}
                                 {temCap && (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
-                                    <Star className="w-3 h-3 text-amber-600 fill-amber-500" />
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-950/80 text-amber-300 border border-amber-500/40 font-mono">
+                                    <Star className="w-3 h-3 text-amber-400 fill-amber-400" />
                                     Capitão (+{jogoEval.pontosCapitao} pts)
                                   </span>
                                 )}
 
-                                {/* Errou resultado */}
                                 {!acertouRes && !acertouPlac && jogoEval.resultadoRealFormatado !== '-' && (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-neutral-200/80 text-neutral-600">
-                                    <XCircle className="w-3 h-3 text-neutral-400" />
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-[#04081c] text-slate-500 border border-cyan-950 font-mono">
+                                    <XCircle className="w-3 h-3 text-slate-500" />
                                     Errou o resultado (0 pts)
                                   </span>
                                 )}
 
                                 {jogoEval.resultadoRealFormatado === '-' && (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-neutral-100 text-neutral-500">
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-[#04081c] text-slate-500 border border-cyan-950 font-mono">
                                     Aguardando apuração
                                   </span>
                                 )}
                               </div>
 
                               {/* Total de pontos deste jogo */}
-                              <div className="font-mono font-black text-xs sm:text-sm text-neutral-900 bg-white px-2 py-0.5 rounded border border-neutral-200 shadow-2xs">
-                                Total do jogo: <span className={jogoEval.pontos > 0 ? 'text-[#009739]' : 'text-neutral-500'}>+{jogoEval.pontos} pts</span>
+                              <div className="font-mono font-black text-xs text-white bg-[#030617] px-2.5 py-1 rounded-lg border border-cyan-500/30 shadow-inner">
+                                Total: <span className={jogoEval.pontos > 0 ? 'text-cyan-300' : 'text-slate-500'}>+{jogoEval.pontos} pts</span>
                               </div>
                             </div>
                           </div>
@@ -792,11 +794,12 @@ export default function HistoricoRodadas({ initialRoundId }: HistoricoRodadasPro
                   </div>
 
                   {/* Rodapé do Card */}
-                  <div className="mt-4 pt-3 border-t border-neutral-150 flex items-center justify-between text-[11px] text-neutral-500">
-                    <span className="font-bold text-neutral-600">
-                      Copa dos Palpites • {currentRound?.nome}
+                  <div className="mt-4 pt-3 border-t border-cyan-950 flex items-center justify-between text-[11px] text-slate-400">
+                    <span className="font-bold text-slate-300 flex items-center gap-1 font-mono">
+                      <UclStarball className="w-3 h-3 text-cyan-400" />
+                      {currentRound?.nome}
                     </span>
-                    <span className="font-mono font-extrabold text-neutral-800">
+                    <span className="font-mono font-black text-cyan-300">
                       Total somado: +{item.totalPontos} pts
                     </span>
                   </div>
@@ -805,7 +808,7 @@ export default function HistoricoRodadas({ initialRoundId }: HistoricoRodadasPro
             })}
 
             {filteredBreakdown.length === 0 && (
-              <div className="col-span-full py-12 text-center text-xs text-neutral-400 bg-white border border-dashed border-neutral-200 rounded-2xl">
+              <div className="col-span-full py-12 text-center text-xs text-slate-400 bg-[#080f33]/90 border border-dashed border-cyan-500/30 rounded-2xl font-mono">
                 Nenhum palpite encontrado para esta rodada.
               </div>
             )}

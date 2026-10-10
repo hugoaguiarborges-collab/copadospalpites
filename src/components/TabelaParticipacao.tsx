@@ -13,6 +13,7 @@ import {
   Calendar,
   AlertCircle
 } from 'lucide-react';
+import { UclStarball, UclTrophy, UclBadge } from './UclAssets';
 
 interface TabelaParticipacaoProps {
   round: Rodada;
@@ -120,40 +121,41 @@ export default function TabelaParticipacao({
   };
 
   return (
-    <div className="bg-white border-2 border-neutral-200 rounded-2xl overflow-hidden shadow-sm">
-      {/* Header com destaque de Mercado Fechado */}
-      <div className="bg-neutral-900 text-white p-5 sm:p-6">
+    <div className="bg-[#080f33]/90 border border-cyan-500/25 rounded-2xl overflow-hidden shadow-2xl backdrop-blur-md">
+      {/* Header com destaque de Mercado Fechado - UEFA Match Status */}
+      <div className="bg-[#050b28]/95 border-b border-cyan-500/20 p-5 sm:p-6 text-white">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-black bg-rose-500 text-white">
-                <Lock className="w-3.5 h-3.5" />
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-black bg-rose-950/80 text-rose-300 border border-rose-500/40 font-mono">
+                <Lock className="w-3.5 h-3.5 text-rose-400" />
                 MERCADO FECHADO
               </span>
-              <span className="text-xs font-bold text-neutral-300">
+              <span className="text-xs font-bold text-cyan-300 font-mono flex items-center gap-1">
+                <UclStarball className="w-3.5 h-3.5 text-cyan-400" />
                 {round.nome}
               </span>
             </div>
-            <h3 className="text-lg sm:text-xl font-black font-display tracking-tight uppercase">
+            <h3 className="text-lg sm:text-xl font-black font-display tracking-tight uppercase text-white">
               Tabela de Participação: Quem Palpitou e Quem Não Palpitou
             </h3>
-            <p className="text-xs text-neutral-400 font-medium mt-1">
-              Fechamento oficial da rodada: <span className="text-amber-400 font-bold">Terça-feira às 13:00</span> ({formatDateTimeDisplay(round.fechamento)})
+            <p className="text-xs text-slate-400 font-medium mt-1 font-mono">
+              Fechamento oficial: <span className="text-cyan-300 font-bold">Terça-feira às 13:00</span> ({formatDateTimeDisplay(round.fechamento)})
             </p>
           </div>
 
-          {/* Mini resumo numérico */}
+          {/* Mini resumo numérico - UEFA Style */}
           <div className="flex items-center gap-2">
-            <div className="bg-neutral-800/80 border border-neutral-700 px-3 py-2 rounded-xl text-center min-w-[70px]">
-              <span className="text-[10px] text-neutral-400 uppercase font-bold block">Total</span>
+            <div className="bg-[#04081c] border border-cyan-500/30 px-3 py-2 rounded-xl text-center min-w-[70px] shadow-inner">
+              <span className="text-[10px] text-slate-400 uppercase font-bold block font-mono">Total</span>
               <span className="text-base font-black font-mono text-white">{totalParticipantes}</span>
             </div>
-            <div className="bg-emerald-950/60 border border-emerald-800 px-3 py-2 rounded-xl text-center min-w-[70px]">
-              <span className="text-[10px] text-emerald-400 uppercase font-bold block">Palpitaram</span>
+            <div className="bg-[#051937] border border-emerald-500/40 px-3 py-2 rounded-xl text-center min-w-[70px] shadow-inner">
+              <span className="text-[10px] text-emerald-400 uppercase font-bold block font-mono">Palpitaram</span>
               <span className="text-base font-black font-mono text-emerald-300">{totalPalpitaram}</span>
             </div>
-            <div className="bg-rose-950/60 border border-rose-800 px-3 py-2 rounded-xl text-center min-w-[70px]">
-              <span className="text-[10px] text-rose-400 uppercase font-bold block">Não Palpitou</span>
+            <div className="bg-[#1f0a1c] border border-rose-500/40 px-3 py-2 rounded-xl text-center min-w-[70px] shadow-inner">
+              <span className="text-[10px] text-rose-400 uppercase font-bold block font-mono">Não Palpitou</span>
               <span className="text-base font-black font-mono text-rose-300">{totalNaoPalpitaram}</span>
             </div>
           </div>
@@ -161,25 +163,25 @@ export default function TabelaParticipacao({
       </div>
 
       {/* Barra de Filtros e Busca */}
-      <div className="p-4 bg-neutral-50/80 border-b border-neutral-200 flex flex-col sm:flex-row items-center justify-between gap-3">
+      <div className="p-4 bg-[#050a24]/90 border-b border-cyan-500/20 flex flex-col sm:flex-row items-center justify-between gap-3">
         {/* Abas de filtro */}
-        <div className="flex items-center gap-1.5 w-full sm:w-auto">
+        <div className="flex items-center gap-1.5 w-full sm:w-auto flex-wrap">
           <button
             onClick={() => setStatusFilter('todos')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer font-mono ${
               statusFilter === 'todos'
-                ? 'bg-neutral-900 text-white shadow-xs'
-                : 'bg-white text-neutral-600 border border-neutral-200 hover:bg-neutral-100'
+                ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-black shadow-md border border-cyan-300/40'
+                : 'bg-[#060c2c] text-slate-300 border border-cyan-900/40 hover:text-white'
             }`}
           >
             Todos ({totalParticipantes})
           </button>
           <button
             onClick={() => setStatusFilter('palpitou')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 font-mono ${
               statusFilter === 'palpitou'
-                ? 'bg-emerald-700 text-white shadow-xs'
-                : 'bg-white text-emerald-800 border border-emerald-200 hover:bg-emerald-50'
+                ? 'bg-emerald-600 text-white font-black shadow-md border border-emerald-300/40'
+                : 'bg-[#060c2c] text-emerald-300 border border-emerald-900/40 hover:text-white'
             }`}
           >
             <CheckCircle2 className="w-3.5 h-3.5" />
@@ -187,10 +189,10 @@ export default function TabelaParticipacao({
           </button>
           <button
             onClick={() => setStatusFilter('nao_palpitou')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 font-mono ${
               statusFilter === 'nao_palpitou'
-                ? 'bg-rose-600 text-white shadow-xs'
-                : 'bg-white text-rose-800 border border-rose-200 hover:bg-rose-50'
+                ? 'bg-rose-600 text-white font-black shadow-md border border-rose-300/40'
+                : 'bg-[#060c2c] text-rose-300 border border-rose-900/40 hover:text-white'
             }`}
           >
             <XCircle className="w-3.5 h-3.5" />
@@ -200,22 +202,22 @@ export default function TabelaParticipacao({
 
         {/* Input de busca */}
         <div className="relative w-full sm:w-64">
-          <Search className="w-4 h-4 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <Search className="w-4 h-4 text-cyan-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             placeholder="Filtrar por participante..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-3 py-1.5 bg-white border border-neutral-200 rounded-lg text-xs font-medium text-neutral-800 focus:outline-hidden focus:ring-2 focus:ring-[#009739]"
+            className="w-full pl-9 pr-3 py-1.5 bg-[#030617] border border-cyan-800/60 rounded-xl text-xs font-bold text-white placeholder:text-slate-500 focus:outline-hidden focus:ring-1 focus:ring-cyan-400"
           />
         </div>
       </div>
 
       {/* Tabela Principal */}
       <div className="overflow-x-auto">
-        <table className="w-full text-left text-xs">
+        <table className="w-full text-left text-xs border-collapse">
           <thead>
-            <tr className="bg-neutral-100/70 border-b border-neutral-200 text-neutral-500 font-bold uppercase tracking-wider text-[11px]">
+            <tr className="bg-[#040822]/80 border-b border-cyan-950 text-slate-400 font-bold uppercase tracking-wider text-[10px] font-mono">
               <th className="py-3 px-4 w-12 text-center">#</th>
               <th className="py-3 px-4">Participante</th>
               <th className="py-3 px-4 text-center">Status do Palpite</th>
@@ -225,37 +227,37 @@ export default function TabelaParticipacao({
               <th className="py-3 px-4 text-right">Ação</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-neutral-150">
+          <tbody className="divide-y divide-cyan-950/70">
             {filteredList.map((item, index) => {
               const isExpanded = expandedParticipant === item.nome;
 
               return (
                 <React.Fragment key={item.id}>
                   <tr 
-                    className={`hover:bg-neutral-50/70 transition-colors ${
-                      !item.palpitou ? 'bg-rose-50/30' : ''
+                    className={`hover:bg-cyan-950/40 transition-colors ${
+                      !item.palpitou ? 'bg-rose-950/15' : ''
                     }`}
                   >
                     {/* Número */}
-                    <td className="py-3.5 px-4 text-center font-mono font-bold text-neutral-400">
+                    <td className="py-3.5 px-4 text-center font-mono font-bold text-slate-400">
                       {index + 1}
                     </td>
 
                     {/* Nome do Participante */}
                     <td className="py-3.5 px-4">
                       <div className="flex items-center gap-2.5">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs uppercase ${
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-xs uppercase shadow-xs ${
                           item.palpitou 
-                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' 
-                            : 'bg-rose-100 text-rose-800 border border-rose-300'
+                            ? 'bg-[#0a1847] text-cyan-300 border border-cyan-500/40' 
+                            : 'bg-rose-950/60 text-rose-300 border border-rose-500/40'
                         }`}>
                           {item.nome.charAt(0)}
                         </div>
                         <div>
-                          <span className="font-bold text-neutral-900 block text-xs sm:text-sm">
+                          <span className="font-bold text-white block text-xs sm:text-sm font-display">
                             {item.nome}
                           </span>
-                          <span className="text-[10px] text-neutral-400 font-mono">
+                          <span className="text-[10px] text-slate-400 font-mono">
                             {item.pontos} pts no campeonato
                           </span>
                         </div>
@@ -265,14 +267,14 @@ export default function TabelaParticipacao({
                     {/* Status: Palpitou vs Não Palpitou */}
                     <td className="py-3.5 px-4 text-center">
                       {item.palpitou ? (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 font-mono">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
                           Sim, palpitou
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-black bg-rose-100 text-rose-800 border border-rose-300 shadow-2xs">
-                          <XCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-                          Não, ainda não palpitou
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-950/80 text-rose-300 border border-rose-500/40 font-mono">
+                          <XCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                          Não palpitou
                         </span>
                       )}
                     </td>
@@ -280,35 +282,35 @@ export default function TabelaParticipacao({
                     {/* Pontos Ganho na Rodada */}
                     <td className="py-3.5 px-4 text-center font-mono">
                       {item.foiAvaliado ? (
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-black ${
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-black ${
                           item.pontosGanhosRodada > 0 
-                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' 
-                            : 'bg-neutral-100 text-neutral-600'
+                            ? 'bg-cyan-950/80 text-cyan-300 border border-cyan-500/40' 
+                            : 'bg-[#04081c] text-slate-400 border border-cyan-950'
                         }`}>
                           +{item.pontosGanhosRodada} pts
                         </span>
                       ) : item.palpitou ? (
-                        <span className="text-neutral-400 text-[11px] font-semibold italic">Aguardando</span>
+                        <span className="text-slate-400 text-[11px] font-semibold italic">Aguardando apuração</span>
                       ) : (
                         <span className="text-rose-400 text-xs font-bold">-</span>
                       )}
                     </td>
 
                     {/* Envios */}
-                    <td className="py-3.5 px-4 text-center hidden sm:table-cell">
+                    <td className="py-3.5 px-4 text-center hidden sm:table-cell font-mono">
                       {item.palpitou ? (
-                        <span className="font-mono text-xs font-bold text-neutral-700 bg-neutral-100 px-2 py-0.5 rounded">
-                          {item.totalEnvios === 1 ? '1 envio' : `${item.totalEnvios} envios (atualizado)`}
+                        <span className="text-xs font-bold text-slate-300 bg-[#050b28] border border-cyan-900/50 px-2 py-0.5 rounded">
+                          {item.totalEnvios === 1 ? '1 envio' : `${item.totalEnvios} envios`}
                         </span>
                       ) : (
-                        <span className="text-neutral-400 font-mono text-xs">-</span>
+                        <span className="text-slate-500 font-mono text-xs">-</span>
                       )}
                     </td>
 
                     {/* Horário */}
                     <td className="py-3.5 px-4 hidden md:table-cell">
                       {item.ultimoEnvio ? (
-                        <span className="font-mono text-xs text-neutral-600 font-semibold">
+                        <span className="font-mono text-xs text-slate-300 font-semibold">
                           {formatDateTimeDisplay(item.ultimoEnvio)}
                         </span>
                       ) : (
@@ -323,13 +325,13 @@ export default function TabelaParticipacao({
                       {item.palpitou ? (
                         <button
                           onClick={() => toggleExpand(item.nome)}
-                          className="px-2.5 py-1 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-md font-bold text-xs inline-flex items-center gap-1 cursor-pointer transition-colors"
+                          className="px-2.5 py-1 bg-[#050b28] hover:bg-cyan-950 text-cyan-300 border border-cyan-500/30 rounded-lg font-bold text-xs inline-flex items-center gap-1 cursor-pointer transition-colors font-mono"
                         >
                           {isExpanded ? 'Ocultar' : 'Ver Palpites'}
                           {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                         </button>
                       ) : (
-                        <span className="text-[11px] text-rose-500 font-bold uppercase tracking-wider">
+                        <span className="text-[11px] text-rose-400 font-bold uppercase tracking-wider font-mono">
                           Pendente
                         </span>
                       )}
@@ -338,52 +340,52 @@ export default function TabelaParticipacao({
 
                   {/* Detalhes expansíveis com os palpites revelados do participante */}
                   {isExpanded && item.palpitou && (
-                    <tr className="bg-neutral-50/90">
-                      <td colSpan={7} className="p-4 border-t border-neutral-150">
-                        <div className="bg-white border border-neutral-200 rounded-xl p-4 shadow-2xs">
-                          <div className="flex items-center justify-between pb-2 mb-3 border-b border-neutral-100">
+                    <tr className="bg-[#04081c]/90">
+                      <td colSpan={7} className="p-4 border-t border-cyan-950">
+                        <div className="bg-[#050b28] border border-cyan-500/30 rounded-xl p-4 shadow-xl">
+                          <div className="flex items-center justify-between pb-2 mb-3 border-b border-cyan-950">
                             <div>
-                              <span className="font-bold text-xs text-neutral-800">
-                                Palpites Oficiais de <strong className="text-green-800">{item.nome}</strong> nesta rodada:
+                              <span className="font-bold text-xs text-white">
+                                Palpites Oficiais de <strong className="text-cyan-300">{item.nome}</strong> nesta rodada:
                               </span>
                               {item.foiAvaliado && (
-                                <span className="ml-2 bg-emerald-100 text-emerald-800 font-mono font-black text-xs px-2 py-0.5 rounded">
-                                  Total ganho na rodada: +{item.pontosGanhosRodada} pts
+                                <span className="ml-2 bg-cyan-950/80 border border-cyan-500/40 text-cyan-300 font-mono font-black text-xs px-2 py-0.5 rounded">
+                                  Total ganho: +{item.pontosGanhosRodada} pts
                                 </span>
                               )}
                             </div>
-                            <span className="text-[10px] font-mono text-neutral-400">
+                            <span className="text-[10px] font-mono text-slate-400">
                               Enviado em: {item.ultimoEnvio ? formatDateTimeDisplay(item.ultimoEnvio) : ''}
                             </span>
                           </div>
 
                           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
                             {item.palpitesAtivos.map((g, gIdx) => (
-                              <div key={g.id || gIdx} className="p-3 bg-neutral-50 rounded-lg border border-neutral-200 text-xs flex flex-col justify-between">
+                              <div key={g.id || gIdx} className="p-3 bg-[#030617] rounded-xl border border-cyan-800/40 text-xs flex flex-col justify-between shadow-inner">
                                 <div>
-                                  <div className="font-black text-neutral-900 text-sm">
+                                  <div className="font-black text-white text-sm font-mono">
                                     {g.palpite}
                                   </div>
                                   {g.resultado_oficial && (
-                                    <div className="text-[11px] text-neutral-500 font-semibold mt-1">
-                                      Resultado real: <span className="font-bold text-neutral-800">{g.resultado_oficial}</span>
+                                    <div className="text-[11px] text-slate-300 font-semibold mt-1">
+                                      Resultado real: <span className="font-bold text-cyan-300">{g.resultado_oficial}</span>
                                     </div>
                                   )}
                                   {g.capitao && (
-                                    <div className="text-[11px] text-neutral-500 font-medium mt-1">
-                                      Capitão: <strong className="text-neutral-700">{g.capitao}</strong>
+                                    <div className="text-[11px] text-slate-300 font-medium mt-1">
+                                      Capitão: <strong className="text-white">{g.capitao}</strong>
                                     </div>
                                   )}
                                 </div>
 
                                 {g.avaliado && (
-                                  <div className="mt-2 pt-2 border-t border-neutral-200/80">
+                                  <div className="mt-2 pt-2 border-t border-cyan-950">
                                     <div className="flex items-center justify-between">
-                                      <span className="text-[11px] font-mono text-emerald-700 font-black">
+                                      <span className="text-[11px] font-mono text-cyan-300 font-black">
                                         +{g.pontos_concedidos || 0} pts
                                       </span>
                                       {g.motivo_detalhado && (
-                                        <span className="text-[10px] text-neutral-500 font-medium">
+                                        <span className="text-[10px] text-slate-400 font-medium font-mono">
                                           {g.motivo_detalhado}
                                         </span>
                                       )}
@@ -403,7 +405,7 @@ export default function TabelaParticipacao({
 
             {filteredList.length === 0 && (
               <tr>
-                <td colSpan={6} className="py-8 text-center text-neutral-400 text-xs">
+                <td colSpan={7} className="py-8 text-center text-slate-400 text-xs font-mono">
                   Nenhum participante encontrado com os filtros selecionados.
                 </td>
               </tr>
@@ -413,12 +415,13 @@ export default function TabelaParticipacao({
       </div>
 
       {/* Footer explicativo */}
-      <div className="p-3 bg-neutral-100/60 border-t border-neutral-200 text-[11px] text-neutral-500 flex items-center justify-between">
-        <span className="font-semibold">
-          💡 Os palpites só são revelados publicamente após o encerramento do mercado (terça-feira às 13:00).
+      <div className="p-3 bg-[#04081c] border-t border-cyan-950 text-[11px] text-slate-400 flex items-center justify-between">
+        <span className="font-medium font-mono">
+          ★ Os palpites só são revelados publicamente após o encerramento do mercado (terça-feira às 13:00).
         </span>
-        <span className="font-bold text-neutral-600">
-          Copa dos Palpites
+        <span className="font-bold text-cyan-300 font-display flex items-center gap-1">
+          <UclStarball className="w-3.5 h-3.5 text-cyan-400" />
+          UEFA Champions League
         </span>
       </div>
     </div>

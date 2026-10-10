@@ -79,7 +79,8 @@ export interface ScoreEvaluationResult {
 
 export function evaluateGuessAgainstResult(
   guess: Palpite,
-  realGame: JogoResultadoOficial
+  realGame: JogoResultadoOficial,
+  captainGoalsOverride?: number
 ): ScoreEvaluationResult {
   const parsed = parseGuess(guess);
   if (!parsed) {
@@ -143,11 +144,17 @@ export function evaluateGuessAgainstResult(
   );
 
   let golsCapitao = 0;
-  if (hasCaptain && realGame.gols_jogadores && realGame.gols_jogadores.length > 0) {
-    const capNorm = normalizeTeamName(parsed.capitao);
-    for (const gj of realGame.gols_jogadores) {
-      if (normalizeTeamName(gj.jogador) === capNorm || gj.jogador.toLowerCase().includes(parsed.capitao.toLowerCase())) {
-        golsCapitao += gj.gols;
+  if (hasCaptain) {
+    if (captainGoalsOverride !== undefined && captainGoalsOverride !== null) {
+      golsCapitao = Math.max(0, captainGoalsOverride);
+    } else if (guess.gols_capitao !== undefined && guess.gols_capitao !== null) {
+      golsCapitao = Math.max(0, guess.gols_capitao);
+    } else if (realGame.gols_jogadores && realGame.gols_jogadores.length > 0) {
+      const capNorm = normalizeTeamName(parsed.capitao);
+      for (const gj of realGame.gols_jogadores) {
+        if (normalizeTeamName(gj.jogador) === capNorm || gj.jogador.toLowerCase().includes(parsed.capitao.toLowerCase())) {
+          golsCapitao += gj.gols;
+        }
       }
     }
   }
@@ -284,7 +291,8 @@ export interface ParticipantRoundBreakdown {
 
 export function evaluateParticipantRound(
   userGuesses: Palpite[],
-  officialGames: JogoResultadoOficial[]
+  officialGames: JogoResultadoOficial[],
+  captainOverridesByGuessId?: Record<string, number>
 ): ParticipantRoundBreakdown {
   let totalPontos = 0;
   let totalPontosResultado = 0;
@@ -297,8 +305,9 @@ export function evaluateParticipantRound(
 
   for (const guess of userGuesses) {
     let matched = false;
+    const capOverride = captainOverridesByGuessId ? captainOverridesByGuessId[guess.id] : undefined;
     for (const realGame of officialGames) {
-      const evalRes = evaluateGuessAgainstResult(guess, realGame);
+      const evalRes = evaluateGuessAgainstResult(guess, realGame, capOverride);
       if (evalRes.matchFound) {
         matched = true;
         totalPontos += evalRes.pontos;

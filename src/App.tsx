@@ -13,6 +13,8 @@ import HistoricoRodadas from './components/HistoricoRodadas';
 import { checkAndEnsureNewTournament } from './utils/tournamentReset';
 import { Check, Trophy, Sparkles, History } from 'lucide-react';
 
+import { UclLogo, UclAtmosphereBackground, UclStarball, UclTrophy } from './components/UclAssets';
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<'palpites' | 'historico' | 'classificacao' | 'admin'>('palpites');
   const [seedingActive, setSeedingActive] = useState(true);
@@ -71,80 +73,72 @@ export default function App() {
   }, [seedingActive]);
 
   return (
-    <div className="min-h-screen bg-[#fcfcfc] text-neutral-900 font-sans flex flex-col">
+    <div className="min-h-screen bg-[#030719] text-slate-100 font-sans flex flex-col relative selection:bg-cyan-500 selection:text-black">
+      {/* UEFA Champions League Starlight Atmosphere */}
+      <UclAtmosphereBackground />
+
       {/* Dynamic automatic scheduler alert banner */}
       {schedulerLog && (
-        <div className="bg-neutral-900 text-white text-xs px-4 py-2 font-mono flex items-center justify-between text-center">
+        <div className="relative z-50 bg-[#070e30] border-b border-cyan-500/30 text-cyan-300 text-xs px-4 py-2 font-mono flex items-center justify-between text-center shadow-md">
           <span className="mx-auto flex items-center gap-1.5 justify-center">
-            <Check className="w-4 h-4 text-emerald-400" />
+            <UclStarball className="w-3.5 h-3.5 text-cyan-400" />
             {schedulerLog}
           </span>
-          <button onClick={() => setSchedulerLog('')} className="hover:text-neutral-400 font-bold px-1.5">✕</button>
+          <button onClick={() => setSchedulerLog('')} className="hover:text-white font-bold px-1.5 cursor-pointer">✕</button>
         </div>
       )}
 
-      {/* Main navigation header */}
-      <header className="bg-white/95 border-b-2 border-[#009739] sticky top-0 z-50 shadow-sm shrink-0">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6">
-          <div className="flex items-center justify-between h-16">
-            {/* Logo area */}
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-green-600 rounded-full flex items-center justify-center text-white text-base shadow-sm">
-                🏆
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-display font-black tracking-tight text-green-800 uppercase block leading-tight text-lg">
-                    Copa dos Palpites
-                  </span>
-                  <span className="bg-[#009739] text-white text-[9px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider">
-                    Novo Campeonato
-                  </span>
-                </div>
-                <span className="text-[10px] font-mono text-neutral-400 uppercase tracking-widest block font-bold">
-                  Competição Oficial • 36 Times • 50 Rodadas
-                </span>
-              </div>
-            </div>
+      {/* Main navigation header - Champions League Broadcast Grade */}
+      <header className="relative z-40 bg-[#050b28]/95 backdrop-blur-md border-b border-cyan-500/20 shadow-xl shadow-black/50 sticky top-0 shrink-0">
+        {/* Glow Line Top */}
+        <div className="h-[2px] w-full bg-gradient-to-r from-blue-700 via-cyan-400 to-indigo-600" />
 
-            {/* Navigation buttons */}
-            <nav className="flex gap-1 bg-neutral-100 p-1 rounded-lg">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6">
+          <div className="flex flex-col md:flex-row items-center justify-between py-2.5 md:py-0 md:h-20 gap-3">
+            {/* Logo area */}
+            <UclLogo size="md" />
+
+            {/* Navigation tabs - UEFA Segmented Match Center */}
+            <nav className="flex gap-1 bg-[#091136]/90 p-1 rounded-xl border border-cyan-500/25 shadow-inner">
               <button
                 onClick={() => setActiveTab('palpites')}
-                className={`px-3 sm:px-5 py-1.5 sm:py-2 rounded-md font-bold text-xs transition-all cursor-pointer ${
+                className={`px-3 sm:px-4 py-2 rounded-lg font-bold text-xs transition-all cursor-pointer flex items-center gap-1.5 ${
                   activeTab === 'palpites'
-                    ? 'bg-white text-green-700 shadow-xs'
-                    : 'text-neutral-500 hover:text-neutral-700'
+                    ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-black shadow-md shadow-cyan-950/60 border border-cyan-300/40'
+                    : 'text-slate-300 hover:text-white hover:bg-white/5'
                 }`}
               >
+                <UclStarball className={`w-3.5 h-3.5 ${activeTab === 'palpites' ? 'text-white' : 'text-cyan-400'}`} />
                 PALPITES
               </button>
               <button
                 onClick={() => setActiveTab('historico')}
-                className={`px-3 sm:px-5 py-1.5 sm:py-2 rounded-md font-bold text-xs transition-all cursor-pointer flex items-center gap-1 ${
+                className={`px-3 sm:px-4 py-2 rounded-lg font-bold text-xs transition-all cursor-pointer flex items-center gap-1.5 ${
                   activeTab === 'historico'
-                    ? 'bg-white text-green-700 shadow-xs'
-                    : 'text-neutral-500 hover:text-neutral-700'
+                    ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-black shadow-md shadow-cyan-950/60 border border-cyan-300/40'
+                    : 'text-slate-300 hover:text-white hover:bg-white/5'
                 }`}
               >
+                <History className="w-3.5 h-3.5 text-cyan-400" />
                 RODADAS ANTERIORES
               </button>
               <button
                 onClick={() => setActiveTab('classificacao')}
-                className={`px-3 sm:px-5 py-1.5 sm:py-2 rounded-md font-bold text-xs transition-all cursor-pointer ${
+                className={`px-3 sm:px-4 py-2 rounded-lg font-bold text-xs transition-all cursor-pointer flex items-center gap-1.5 ${
                   activeTab === 'classificacao'
-                    ? 'bg-white text-green-700 shadow-xs'
-                    : 'text-neutral-500 hover:text-neutral-700'
+                    ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-black shadow-md shadow-cyan-950/60 border border-cyan-300/40'
+                    : 'text-slate-300 hover:text-white hover:bg-white/5'
                 }`}
               >
+                <UclTrophy className="w-4 h-4 text-cyan-200" />
                 CLASSIFICAÇÃO
               </button>
               <button
                 onClick={() => setActiveTab('admin')}
-                className={`px-3 sm:px-5 py-1.5 sm:py-2 rounded-md font-bold text-xs transition-all cursor-pointer ${
+                className={`px-3 sm:px-4 py-2 rounded-lg font-bold text-xs transition-all cursor-pointer flex items-center gap-1.5 ${
                   activeTab === 'admin'
-                    ? 'bg-white text-green-700 shadow-xs'
-                    : 'text-neutral-500 hover:text-neutral-700'
+                    ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-black shadow-md shadow-cyan-950/60 border border-cyan-300/40'
+                    : 'text-slate-300 hover:text-white hover:bg-white/5'
                 }`}
               >
                 ADMINISTRAÇÃO
@@ -155,10 +149,11 @@ export default function App() {
       </header>
 
       {/* Main Container Stage */}
-      <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6">
+      <main className="relative z-10 flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6">
         {seedingActive ? (
-          <div className="py-24 text-center font-mono text-neutral-400 text-sm">
-            Iniciando Novo Campeonato e conectando ao banco de dados...
+          <div className="py-24 text-center font-mono text-cyan-300 text-sm flex flex-col items-center justify-center gap-3">
+            <UclStarball className="w-10 h-10 animate-spin text-cyan-400" glow />
+            <span>Carregando a Noite de UEFA Champions League...</span>
           </div>
         ) : (
           <div className="transition-all duration-300">
@@ -170,11 +165,18 @@ export default function App() {
         )}
       </main>
 
-      {/* Simple Footer */}
-      <footer className="bg-white border-t border-neutral-200 px-8 py-4 flex flex-col sm:flex-row justify-between items-center text-[11px] text-neutral-400 font-bold tracking-wide uppercase mt-auto">
-        <p>&copy; 2026 COPA DOS PALPITES • NOVO CAMPEONATO OFICIAL</p>
-        <div className="flex gap-4 items-center mt-2 sm:mt-0 font-bold">
-          <span>SISTEMA AUTOMÁTICO DE PLACARES</span>
+      {/* Champions League Official Broadcast Footer */}
+      <footer className="relative z-20 bg-[#040822] border-t border-cyan-500/20 px-6 sm:px-10 py-5 flex flex-col sm:flex-row justify-between items-center text-[11px] text-slate-400 font-bold tracking-wider uppercase mt-auto gap-3">
+        <div className="flex items-center gap-2">
+          <UclStarball className="w-5 h-5 text-cyan-400" glow />
+          <p className="font-mono text-slate-300">&copy; 2026 UEFA CHAMPIONS LEAGUE • COPA DOS PALPITES</p>
+        </div>
+        <div className="flex gap-4 items-center text-[10px] font-mono text-slate-400">
+          <span className="text-cyan-400 font-black">THE CHAMPIONS</span>
+          <span>·</span>
+          <span>36 CLUBES EUROPEUS</span>
+          <span>·</span>
+          <span>50 RODADAS OFICIAIS</span>
         </div>
       </footer>
     </div>

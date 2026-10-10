@@ -2,6 +2,7 @@ export interface Participante {
   id: string; // usually the name lowercase
   nome: string;
   pontos: number;
+  acertos_placar?: number;
 }
 
 export interface Rodada {
@@ -34,6 +35,8 @@ export interface Palpite {
   acertou_resultado?: boolean;
   acertou_placar?: boolean;
   gols_capitao?: number;
+  pontos_capitao?: number;
+  capitao_fez_gol?: boolean;
   resultado_oficial?: string;
   jogo_oficial?: string;
 }

@@ -5,18 +5,30 @@ import { getNextTuesday13h } from './dateUtils';
 export const TOTAL_RODADAS = 50;
 export const TOURNAMENT_VERSION = 'campeonato_50_rodadas_2026';
 
-export async function resetTournamentToNewChampionship(): Promise<void> {
-  console.log(`Iniciando configuração do Novo Campeonato com ${TOTAL_RODADAS} rodadas...`);
+export const INITIAL_PARTICIPANTS_SCORES = [
+  { id: 'everton', nome: 'Everton', pontos: 58, acertos_placar: 1 },
+  { id: 'marcelo', nome: 'Marcelo', pontos: 52, acertos_placar: 4 },
+  { id: 'rafael', nome: 'Rafael', pontos: 52, acertos_placar: 2 },
+  { id: 'jardel', nome: 'Jardel', pontos: 50, acertos_placar: 2 },
+  { id: 'franz', nome: 'Franz', pontos: 49, acertos_placar: 2 },
+  { id: 'lele', nome: 'Lele', pontos: 49, acertos_placar: 2 },
+  { id: 'hugo', nome: 'Hugo', pontos: 49, acertos_placar: 1 },
+];
 
-  // 1. Zerar pontuação de todos os participantes existentes
+export async function resetTournamentToNewChampionship(): Promise<void> {
+  console.log(`Iniciando configuração do Novo Campeonato com ${TOTAL_RODADAS} rodadas e pontuações iniciais oficiais...`);
+
+  // 1. Configurar pontuação inicial oficial de todos os participantes
   try {
-    const pSnap = await getDocs(collection(db, 'participantes'));
-    const pUpdates = pSnap.docs.map(pDoc => 
-      updateDoc(doc(db, 'participantes', pDoc.id), { pontos: 0 })
-    );
-    await Promise.all(pUpdates);
+    for (const p of INITIAL_PARTICIPANTS_SCORES) {
+      await setDoc(doc(db, 'participantes', p.id), {
+        nome: p.nome,
+        pontos: p.pontos,
+        acertos_placar: p.acertos_placar
+      }, { merge: true });
+    }
   } catch (err) {
-    console.warn("Erro ao zerar participantes:", err);
+    console.warn("Erro ao configurar participantes iniciais:", err);
   }
 
   // 2. Limpar logs antigos de pontuação

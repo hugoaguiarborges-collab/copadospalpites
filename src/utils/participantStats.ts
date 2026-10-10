@@ -256,7 +256,7 @@ export function calculateParticipantStats(
   });
 
   // 5. Totalizar métricas principais do participante em todos os palpites
-  let totalAcertosPlacar = 0;
+  let totalAcertosPlacar = targetP?.acertos_placar || 0;
   let totalAcertosResultado = 0;
   let totalCapitaoFezGolVezes = 0; // Quantas vezes um capitão dele marcou gol
   let totalCapitaoGolsSoma = 0;

@@ -26,17 +26,18 @@ import {
   Check, 
   AlertTriangle, 
   Info,
-  Plus,
-  Trash2,
   RotateCcw,
   Lock,
   Unlock,
   Users,
-  Eye
+  Eye,
+  Minus,
+  Plus
 } from 'lucide-react';
 import { getNextTuesday13h, formatDateTimeDisplay, isMarketOpen, getRoundNumber } from '../utils/dateUtils';
 import TabelaParticipacao from './TabelaParticipacao';
 import HistoricoRodadas from './HistoricoRodadas';
+import { UclStarball, UclTrophy } from './UclAssets';
 
 interface AuditLogEntry {
   id: string;
@@ -55,6 +56,19 @@ export interface MatchGuessLine {
 }
 
 const SCORE_OPTIONS = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15'];
+
+const COMMON_SCORE_SUGGESTIONS = [
+  { label: '1x0', m: '1', v: '0' },
+  { label: '2x1', m: '2', v: '1' },
+  { label: '2x0', m: '2', v: '0' },
+  { label: '1x1', m: '1', v: '1' },
+  { label: '0x0', m: '0', v: '0' },
+  { label: '0x1', m: '0', v: '1' },
+  { label: '1x2', m: '1', v: '2' },
+  { label: '0x2', m: '0', v: '2' },
+  { label: '3x1', m: '3', v: '1' },
+  { label: '2x2', m: '2', v: '2' }
+];
 
 interface PalpitesPageProps {
   onSuggestName?: (name: string) => void;
@@ -290,7 +304,7 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
 
   const handleSelectSuggestion = (pNome: string) => {
     setNome(pNome);
-    setConfirmacaoNome(pNome);
+    setConfirmacaoNome(''); // O participante deve digitar obrigatoriamente o nome na confirmação!
     setShowSuggestions(false);
     if (onSuggestName) onSuggestName(pNome);
   };
@@ -303,17 +317,6 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
     });
   };
 
-  const handleAddMatch = () => {
-    setMatchLines(prev => [
-      ...prev,
-      { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '', capitao: '' }
-    ]);
-  };
-
-  const handleRemoveMatch = (index: number) => {
-    if (matchLines.length <= 1) return;
-    setMatchLines(prev => prev.filter((_, i) => i !== index));
-  };
 
   const handleClearMatch = (index: number) => {
     setMatchLines(prev => {
@@ -321,6 +324,29 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
       updated[index] = { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '', capitao: '' };
       return updated;
     });
+  };
+
+  const handleStepGoals = (index: number, field: 'golsMandante' | 'golsVisitante', delta: number) => {
+    setMatchLines(prev => {
+      const updated = [...prev];
+      const currentStr = updated[index][field];
+      const currentVal = currentStr === '' ? (delta > 0 ? 0 : 0) : parseInt(currentStr, 10);
+      const nextVal = Math.max(0, isNaN(currentVal) ? (delta > 0 ? 1 : 0) : currentVal + delta);
+      updated[index] = { ...updated[index], [field]: String(nextVal) };
+      return updated;
+    });
+  };
+
+  const handleApplyPresetToMatch = (index: number, m: string, v: string) => {
+    setMatchLines(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], golsMandante: m, golsVisitante: v };
+      return updated;
+    });
+  };
+
+  const handleApplyPresetToAllMatches = (m: string, v: string) => {
+    setMatchLines(prev => prev.map(line => ({ ...line, golsMandante: m, golsVisitante: v })));
   };
 
   const formatDateTime = (isoString: string) => {
@@ -511,71 +537,91 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
 
   return (
     <div className="space-y-8">
-      {/* Title block with green accent */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-neutral-200 pb-4 gap-4">
+      {/* Title block with Champions League cyan/blue accent */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-cyan-500/20 pb-4 gap-4">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-neutral-800 uppercase flex items-center gap-2">
-            <span className="w-2.5 h-6 bg-[#009739] block rounded-sm"></span>
-            {activeRound ? `Enviar Palpite - ${activeRound.nome}` : 'Mercado Fechado - Aguardando Resultados'}
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-[10px] tracking-[0.2em] font-black text-cyan-400 uppercase font-mono">
+              UEFA CHAMPIONS LEAGUE
+            </span>
+            <span className="text-slate-600">·</span>
+            <span className="text-[10px] font-mono text-slate-400 tracking-wider uppercase font-semibold">
+              MATCHDAY DA COMPETIÇÃO
+            </span>
+          </div>
+          <h1 className="text-2xl font-black tracking-tight text-white uppercase flex items-center gap-2.5 font-display drop-shadow-sm">
+            <div className="w-2.5 h-6 bg-gradient-to-b from-cyan-400 to-blue-600 rounded-xs shadow-xs" />
+            {activeRound ? `Palpites Oficiais - ${activeRound.nome}` : 'Mercado Fechado - Apuração dos Placares'}
           </h1>
-          <p className="text-xs text-neutral-400 mt-1 uppercase tracking-widest font-bold">
-            Seleção direta dos 36 times e placares por caixinhas • Fechamento sempre na terça-feira às 13:00
+          <p className="text-xs text-slate-400 mt-1 uppercase tracking-wider font-semibold font-mono">
+            36 Clubes Europeus • 5 Jogos Fixos • Fechamento Oficial: Terça-feira às 13:00
           </p>
         </div>
 
-        {/* Status indicator */}
+        {/* Status indicator Champions League */}
         {activeRound ? (
           <div className="flex items-center gap-2">
             {(activeRound.is_test || activeRound.id === 'rodada-teste') && (
-              <span className="bg-purple-100 border border-purple-300 text-purple-800 px-3 py-1 rounded-full text-xs font-black uppercase flex items-center gap-1.5 animate-pulse">
-                🧪 MODO TESTE ATIVO
+              <span className="bg-purple-950/80 border border-purple-500/50 text-purple-300 px-3 py-1 rounded-full text-xs font-black uppercase flex items-center gap-1.5 animate-pulse">
+                🧪 MODO TESTE
               </span>
             )}
-            <div className="bg-[#dcfce7] border border-emerald-250 text-[#166534] px-4 py-1.5 rounded-full text-xs font-bold flex items-center gap-2 tracking-wide uppercase shrink-0">
+            <div className="bg-[#05193d] border border-cyan-400/40 text-cyan-300 px-4 py-1.5 rounded-full text-xs font-black flex items-center gap-2 tracking-wide uppercase shrink-0 shadow-lg shadow-cyan-950/40">
+              <UclStarball className="w-3.5 h-3.5 text-cyan-400 animate-spin" glow />
               <span>MERCADO ABERTO</span>
-              <span className="animate-pulse h-2 w-2 bg-green-600 rounded-full"></span>
+              <span className="animate-pulse h-2 w-2 bg-cyan-400 rounded-full"></span>
             </div>
           </div>
         ) : (
-          <div className="bg-[#fee2e2] border border-rose-250 text-[#991b1b] px-4 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 tracking-wide uppercase shrink-0">
-            <Lock className="w-3.5 h-3.5" />
+          <div className="bg-[#240c1a] border border-rose-500/40 text-rose-300 px-4 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 tracking-wide uppercase shrink-0 shadow-sm">
+            <Lock className="w-3.5 h-3.5 text-rose-400" />
             <span>MERCADO ENCERRADO (TERÇA 13H)</span>
           </div>
         )}
       </div>
 
-      {/* Mercado Countdown Banner */}
+      {/* Mercado Countdown Banner - Champions League Stadium Night */}
       {activeRound && timeLeft && (
-        <div className="bg-neutral-50 border border-neutral-200 text-neutral-800 rounded-2xl p-5 shadow-xs flex flex-col md:flex-row justify-between items-center gap-4 transition-all duration-300">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-neutral-100 rounded-xl border border-neutral-200 text-[#009739]">
-              <Clock className="w-5 h-5 text-[#009739]" />
+        <div className="relative overflow-hidden bg-gradient-to-r from-[#0d1746] via-[#070e30] to-[#040922] border border-cyan-500/30 text-white rounded-2xl p-5 shadow-xl flex flex-col md:flex-row justify-between items-center gap-4 transition-all duration-300">
+          {/* Subtle starball watermark inside banner */}
+          <div className="absolute right-[-40px] top-[-30px] w-48 h-48 opacity-10 text-cyan-300 pointer-events-none">
+            <UclStarball className="w-full h-full" />
+          </div>
+
+          <div className="flex items-center gap-3.5 z-10">
+            <div className="p-3 bg-[#0a1645] rounded-xl border border-cyan-500/40 text-cyan-300 shadow-md">
+              <Clock className="w-6 h-6 text-cyan-400" />
             </div>
             <div>
-              <h3 className="font-extrabold text-sm uppercase tracking-wide flex items-center gap-1.5 text-neutral-800">
-                {(activeRound.is_test || activeRound.id === 'rodada-teste') ? 'Rodada de Teste Ativa (Controle Manual do Administrador):' : 'O Mercado se encerra em:'}
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black text-cyan-400 uppercase tracking-widest font-mono">
+                  CONTAGEM REGRESSIVA OFICIAL
+                </span>
+              </div>
+              <h3 className="font-black text-sm uppercase tracking-wide flex items-center gap-1.5 text-white font-display">
+                {(activeRound.is_test || activeRound.id === 'rodada-teste') ? 'Rodada de Teste Ativa (Controle Manual):' : 'O Mercado se encerra em:'}
               </h3>
-              <p className="text-[10.5px] text-neutral-500 font-bold uppercase tracking-wider font-mono mt-0.5">
+              <p className="text-[10.5px] text-slate-300 font-semibold uppercase tracking-wider font-mono mt-0.5">
                 {(activeRound.is_test || activeRound.id === 'rodada-teste')
-                  ? 'O mercado pode ser aberto e fechado a qualquer momento na Administração'
-                  : `Fechamento oficial: ${formatDateTimeDisplay(activeRound.fechamento)} (Terça-feira às 13:00)`
+                  ? 'Abertura e fechamento manuais pela administração'
+                  : `Fechamento: ${formatDateTimeDisplay(activeRound.fechamento)} (Terça-feira às 13:00)`
                 }
               </p>
             </div>
           </div>
           
-          <div className="flex gap-2">
+          <div className="flex gap-2 z-10">
             {[
               { label: 'DIAS', value: timeLeft.days },
               { label: 'HORAS', value: timeLeft.hours },
               { label: 'MINUTOS', value: timeLeft.minutes },
               { label: 'SEGUNDOS', value: timeLeft.seconds }
             ].map((item, id) => (
-              <div key={id} className="flex flex-col items-center bg-white border border-neutral-200 p-2.5 rounded-lg min-w-[70px]">
-                <span className="text-xl font-black font-mono tracking-tight text-[#009739]">
+              <div key={id} className="flex flex-col items-center bg-[#050b28]/90 border border-cyan-500/35 p-2.5 rounded-xl min-w-[70px] shadow-inner backdrop-blur-xs">
+                <span className="text-xl font-black font-mono tracking-tight text-cyan-300 drop-shadow-[0_0_8px_rgba(0,240,255,0.4)]">
                   {String(item.value).padStart(2, '0')}
                 </span>
-                <span className="text-[8px] font-bold text-neutral-500 mt-0.5 tracking-widest">{item.label}</span>
+                <span className="text-[8px] font-bold text-slate-400 mt-0.5 tracking-widest">{item.label}</span>
               </div>
             ))}
           </div>
@@ -584,20 +630,20 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
 
       {/* When Market is Closed: Informative Banner */}
       {!activeRound && (
-        <div className="bg-neutral-900 text-white rounded-2xl p-6 sm:p-8 flex flex-col md:flex-row items-center justify-between gap-6 shadow-xs">
+        <div className="bg-gradient-to-r from-[#170a24] via-[#090d29] to-[#04081c] border border-cyan-500/30 text-white rounded-2xl p-6 sm:p-8 flex flex-col md:flex-row items-center justify-between gap-6 shadow-xl">
           <div className="flex items-center gap-4">
-            <div className="w-14 h-14 bg-rose-500/20 border border-rose-500/30 rounded-2xl flex items-center justify-center shrink-0">
+            <div className="w-14 h-14 bg-rose-500/20 border border-rose-500/40 rounded-2xl flex items-center justify-center shrink-0">
               <Lock className="w-7 h-7 text-rose-400" />
             </div>
             <div>
-              <span className="text-rose-400 text-xs font-black tracking-widest uppercase block">
+              <span className="text-rose-400 text-xs font-black tracking-widest uppercase block font-mono">
                 RODADA FINALIZADA • MERCADO FECHADO
               </span>
-              <h2 className="text-xl sm:text-2xl font-black font-display tracking-tight uppercase mt-0.5">
-                Aguardando Atualização dos Placares
+              <h2 className="text-xl sm:text-2xl font-black font-display tracking-tight uppercase mt-0.5 text-white">
+                Aguardando Apuração Oficial da Champions
               </h2>
-              <p className="text-xs text-neutral-300 font-medium mt-1.5 max-w-2xl leading-relaxed">
-                O mercado foi fechado na <strong className="text-amber-400">terça-feira às 13:00</strong>. Somente quando o mercado fecha é que a rodada é considerada finalizada. O mercado da próxima rodada abrirá automaticamente assim que o administrador lançar e atualizar os placares oficiais dos jogos!
+              <p className="text-xs text-slate-300 font-medium mt-1.5 max-w-2xl leading-relaxed">
+                O mercado foi fechado na <strong className="text-cyan-300">terça-feira às 13:00</strong>. Somente após o fechamento os palpites são revelados. O mercado da próxima rodada abrirá automaticamente assim que os placares oficiais dos jogos forem lançados!
               </p>
             </div>
           </div>
@@ -607,23 +653,25 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
       {/* Main dashboard body with 2 columns */}
       <div className="flex flex-col lg:flex-row gap-6">
         {/* Left main form section - 2/3 width */}
-        <section className="flex-1 lg:w-2/3 bg-white border border-neutral-200 rounded-2xl shadow-xs p-6 flex flex-col">
-          <div className="border-b border-neutral-100 pb-4 mb-5">
-            <h2 className="text-lg font-black text-neutral-800 uppercase tracking-tight flex items-center gap-2">
-              <span className="w-2 h-4 bg-[#009739] block rounded-xs"></span>
-              {activeRound ? 'Formulário de Palpites' : 'Status do Mercado'}
-            </h2>
-            <p className="text-neutral-400 text-xs mt-0.5 uppercase tracking-wider font-bold">
+        <section className="flex-1 lg:w-2/3 bg-[#080f33]/90 border border-cyan-500/25 rounded-2xl shadow-2xl p-6 flex flex-col backdrop-blur-md">
+          <div className="border-b border-cyan-500/15 pb-4 mb-5">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-4 bg-gradient-to-b from-cyan-400 to-blue-600 rounded-xs" />
+              <h2 className="text-lg font-black text-white uppercase tracking-tight font-display flex items-center gap-2">
+                {activeRound ? 'Palpites da Champions League' : 'Status do Mercado'}
+              </h2>
+            </div>
+            <p className="text-slate-400 text-xs mt-1 uppercase tracking-wider font-semibold font-mono">
               {activeRound 
-                ? 'Selecione os times nas caixinhas e clique para escolher os placares (0 a 15).' 
+                ? 'Selecione os confrontos europeus e utilize os atalhos de placares rápidos.' 
                 : 'O mercado está fechado no momento. Veja a tabela de quem palpitou abaixo.'}
             </p>
           </div>
 
           {!activeRound ? (
             <div className="py-6 space-y-4">
-              <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs font-medium flex items-center gap-2.5">
-                <AlertCircle className="w-5 h-5 text-amber-600 shrink-0" />
+              <div className="p-4 bg-amber-950/40 border border-amber-500/40 rounded-xl text-amber-200 text-xs font-medium flex items-center gap-2.5">
+                <AlertCircle className="w-5 h-5 text-amber-400 shrink-0" />
                 <span>
                   O envio de palpites está bloqueado. O mercado abrirá automaticamente quando os placares forem atualizados.
                 </span>
@@ -645,8 +693,8 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
           {/* Participant Identification Fields */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
             <div className="relative">
-              <label htmlFor="input-nome-participante" className="block text-xs font-black uppercase tracking-wider text-neutral-700 mb-1">
-                Nome do Participante *
+              <label htmlFor="input-nome-participante" className="block text-xs font-black uppercase tracking-wider text-slate-300 mb-1 flex items-center gap-1 font-mono">
+                <span>Nome do Participante *</span>
               </label>
               <input
                 id="input-nome-participante"
@@ -658,19 +706,22 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
                   setShowSuggestions(true);
                 }}
                 onFocus={() => setShowSuggestions(true)}
-                className="w-full border border-neutral-200 p-3 rounded-lg text-sm bg-neutral-50/50 focus:bg-white focus:outline-hidden focus:ring-1 focus:ring-[#009739] font-bold text-neutral-800 placeholder:text-neutral-400"
+                className="w-full border border-cyan-800/60 p-3 rounded-xl text-sm bg-[#050a24] focus:bg-[#070e30] focus:outline-hidden focus:ring-1 focus:ring-cyan-400 font-bold text-white placeholder:text-slate-500 transition-colors shadow-inner"
               />
 
               {showSuggestions && suggestions.length > 0 && (
-                <ul className="absolute z-50 left-0 right-0 mt-1 bg-white border border-neutral-200 rounded-lg shadow-lg max-h-48 overflow-y-auto divide-y divide-neutral-100 text-sm">
+                <ul className="absolute z-50 left-0 right-0 mt-1 bg-[#060c28] border border-cyan-500/40 rounded-xl shadow-2xl max-h-48 overflow-y-auto divide-y divide-cyan-950/80 text-sm">
                   {suggestions.map((p) => (
                     <li
                       key={p.id}
                       onClick={() => handleSelectSuggestion(p.nome)}
-                      className="p-3 hover:bg-neutral-50 cursor-pointer flex justify-between items-center transition-colors font-bold text-neutral-700"
+                      className="p-3 hover:bg-cyan-950/60 cursor-pointer flex justify-between items-center transition-colors font-bold text-slate-200"
                     >
-                      <span>{p.nome}</span>
-                      <span className="text-[10px] bg-green-50 text-green-700 font-mono px-2 py-0.5 rounded-full border border-green-200">
+                      <span className="flex items-center gap-2">
+                        <UclStarball className="w-3.5 h-3.5 text-cyan-400" />
+                        {p.nome}
+                      </span>
+                      <span className="text-[10px] bg-cyan-950 text-cyan-300 font-mono px-2 py-0.5 rounded-full border border-cyan-700/60 font-bold">
                         {p.pontos} Pts
                       </span>
                     </li>
@@ -680,16 +731,17 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
             </div>
 
             <div>
-              <label htmlFor="input-confirmacao-nome" className="block text-xs font-black uppercase tracking-wider text-neutral-700 mb-1">
-                Confirmar Nome *
+              <label htmlFor="input-confirmacao-nome" className="block text-xs font-black uppercase tracking-wider text-slate-300 mb-1 flex items-center justify-between font-mono">
+                <span>Confirmar Nome *</span>
+                <span className="text-[10px] text-amber-400 font-bold lowercase">(digite manualmente)</span>
               </label>
               <input
                 id="input-confirmacao-nome"
                 type="text"
-                placeholder="Digite seu nome novamente..."
+                placeholder="Digite seu nome exatamente como selecionado..."
                 value={confirmacaoNome}
                 onChange={(e) => setConfirmacaoNome(e.target.value)}
-                className="w-full border border-neutral-200 p-3 rounded-lg text-sm bg-neutral-50/50 focus:bg-white focus:outline-hidden focus:ring-1 focus:ring-[#009739] font-bold text-neutral-800 placeholder:text-neutral-400"
+                className="w-full border border-cyan-800/60 p-3 rounded-xl text-sm bg-[#050a24] focus:bg-[#070e30] focus:outline-hidden focus:ring-1 focus:ring-cyan-400 font-bold text-white placeholder:text-slate-500 transition-colors shadow-inner"
               />
             </div>
           </div>
@@ -698,10 +750,10 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
           {submissionCount > 0 && (
             <div className={`p-4 mb-5 border rounded-xl text-xs flex items-start gap-3 transition-all ${
               submissionCount === 1 
-                ? 'bg-amber-50/70 border-amber-200/60 text-amber-800' 
-                : 'bg-[#009739]/5 border-[#009739]/20 text-[#009739] font-semibold'
+                ? 'bg-amber-950/40 border-amber-500/40 text-amber-200' 
+                : 'bg-cyan-950/50 border-cyan-500/40 text-cyan-200 font-semibold'
             }`}>
-              <Info className={`w-5 h-5 shrink-0 ${submissionCount === 1 ? 'text-amber-600' : 'text-[#009739]'}`} />
+              <Info className={`w-5 h-5 shrink-0 ${submissionCount === 1 ? 'text-amber-400' : 'text-cyan-400'}`} />
               <div className="flex-1">
                 <p className="font-bold mb-0.5">
                   {submissionCount === 1 
@@ -719,41 +771,66 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
             </div>
           )}
 
-          <form onSubmit={handleFormSubmit} className="space-y-4 flex flex-col flex-1">
-            <div className="flex items-center justify-between px-1">
-              <span className="text-[11px] font-black uppercase tracking-wider text-neutral-500">
-                Jogos da Rodada (Selecione os times e placares nas caixinhas)
-              </span>
-              <button
-                type="button"
-                onClick={handleAddMatch}
-                className="text-xs font-bold text-[#009739] hover:text-[#007a2e] flex items-center gap-1 cursor-pointer transition-colors"
-              >
-                <Plus className="w-3.5 h-3.5" /> Adicionar Jogo
-              </button>
+          <form onSubmit={handleFormSubmit} className="space-y-3.5 flex flex-col flex-1">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1 pb-1">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-black uppercase tracking-wider text-cyan-300 flex items-center gap-1.5 font-mono">
+                  <UclStarball className="w-3 h-3 text-cyan-400" />
+                  Os 5 Jogos da Champions
+                </span>
+                <span className="text-[10px] font-black uppercase tracking-wider text-cyan-300 bg-cyan-950/80 border border-cyan-600/40 px-2.5 py-0.5 rounded-full font-mono">
+                  5 Jogos Fixos
+                </span>
+              </div>
+
+              {/* Atalhos Globais Rápidos */}
+              <div className="flex items-center gap-1.5 text-[10px] text-slate-400 flex-wrap">
+                <span className="font-bold text-slate-500">Atalhos gerais:</span>
+                {[
+                  { label: 'Todos 2x1', m: '2', v: '1' },
+                  { label: 'Todos 1x0', m: '1', v: '0' },
+                  { label: 'Todos 1x1', m: '1', v: '1' }
+                ].map(p => (
+                  <button
+                    key={p.label}
+                    type="button"
+                    onClick={() => handleApplyPresetToAllMatches(p.m, p.v)}
+                    disabled={!activeRound}
+                    className="px-2 py-0.5 rounded-md bg-[#0a1442] hover:bg-cyan-500 hover:text-black text-cyan-300 border border-cyan-500/30 font-bold font-mono transition-colors shadow-2xs cursor-pointer"
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            {/* Match Rows */}
-            <div className="space-y-3">
+            {/* Match Rows Compactas e Fluidas - UEFA Champions League Matchday */}
+            <div className="space-y-2.5">
               {matchLines.map((line, index) => {
                 const isConfigured = Boolean(line.timeMandante && line.timeVisitante && line.golsMandante !== '' && line.golsVisitante !== '');
                 return (
                   <div 
                     key={index} 
-                    className={`p-3.5 rounded-xl border transition-all ${
+                    className={`p-3 rounded-xl border transition-all ${
                       isConfigured 
-                        ? 'bg-white border-[#009739]/30 shadow-xs' 
-                        : 'bg-neutral-50/40 border-neutral-200'
+                        ? 'bg-[#08123d]/90 border-cyan-400/50 shadow-lg shadow-cyan-950/40 ring-1 ring-cyan-400/20' 
+                        : 'bg-[#050b24]/90 border-cyan-900/40 hover:border-cyan-500/30'
                     }`}
                   >
-                    <div className="flex items-center justify-between mb-2">
+                    {/* Header do Jogo Compacto */}
+                    <div className="flex items-center justify-between mb-2 pb-1.5 border-b border-cyan-950">
                       <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-neutral-100 text-neutral-600 font-mono">
+                        <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-[#0b1747] text-cyan-300 font-mono border border-cyan-500/30">
                           Jogo {index + 1}
                         </span>
-                        {isConfigured && (
-                          <span className="text-[11px] font-extrabold text-[#009739]">
+                        {isConfigured ? (
+                          <span className="text-[11px] font-black text-cyan-300 flex items-center gap-1 font-mono">
+                            <Check className="w-3.5 h-3.5 text-cyan-400" />
                             {line.timeMandante} {line.golsMandante} x {line.golsVisitante} {line.timeVisitante}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-medium text-slate-400">
+                            Selecione os clubes e defina o placar
                           </span>
                         )}
                       </div>
@@ -762,38 +839,25 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
                         <button
                           type="button"
                           onClick={() => handleClearMatch(index)}
-                          className="p-1 text-neutral-400 hover:text-neutral-600 rounded transition-colors"
-                          title="Limpar jogo"
+                          className="p-1 text-slate-400 hover:text-rose-400 rounded transition-colors cursor-pointer"
+                          title="Limpar campos deste jogo"
                         >
-                          <RotateCcw className="w-3.5 h-3.5" />
+                          <RotateCcw className="w-3 h-3" />
                         </button>
-                        {matchLines.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveMatch(index)}
-                            className="p-1 text-neutral-400 hover:text-rose-500 rounded transition-colors"
-                            title="Remover linha"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
                       </div>
                     </div>
 
-                    {/* Boxes Grid */}
+                    {/* Linha dos Times e Placar Compacta */}
                     <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
-                      {/* Box 1: Home Team Selector */}
+                      {/* Time Mandante */}
                       <div className="sm:col-span-4">
-                        <label className="block text-[9px] font-black uppercase tracking-wider text-neutral-400 mb-0.5">
-                          Time Mandante
-                        </label>
                         <select
                           value={line.timeMandante}
                           onChange={(e) => handleMatchChange(index, 'timeMandante', e.target.value)}
                           disabled={!activeRound}
-                          className="w-full p-2.5 bg-white border border-neutral-300 rounded-lg text-xs font-bold text-neutral-800 focus:outline-hidden focus:ring-2 focus:ring-[#009739] cursor-pointer"
+                          className="w-full py-1.5 px-2 bg-[#04081c] border border-cyan-800/60 rounded-lg text-xs font-bold text-white focus:outline-hidden focus:ring-1 focus:ring-cyan-400 cursor-pointer"
                         >
-                          <option value="">-- Escolha o Time --</option>
+                          <option value="">-- Clube Mandante --</option>
                           {TEAMS_LIST.map((team) => (
                             <option key={team} value={team} disabled={team === line.timeVisitante}>
                               {team}
@@ -802,59 +866,84 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
                         </select>
                       </div>
 
-                      {/* Box 2: Home Score */}
-                      <div className="sm:col-span-2">
-                        <label className="block text-[9px] font-black uppercase tracking-wider text-neutral-400 mb-0.5 text-center">
-                          Gols
-                        </label>
-                        <select
-                          value={line.golsMandante}
-                          onChange={(e) => handleMatchChange(index, 'golsMandante', e.target.value)}
-                          disabled={!activeRound}
-                          className="w-full p-2.5 bg-white border border-neutral-300 rounded-lg text-xs font-black text-center text-neutral-800 focus:outline-hidden focus:ring-2 focus:ring-[#009739] cursor-pointer font-mono"
-                        >
-                          <option value="">-</option>
-                          {SCORE_OPTIONS.map((score) => (
-                            <option key={score} value={score}>{score}</option>
-                          ))}
-                        </select>
+                      {/* Placar Central com Stepper Compacto UCL */}
+                      <div className="sm:col-span-4 flex items-center justify-center gap-1">
+                        {/* Gols Mandante */}
+                        <div className="flex items-center border border-cyan-700/50 rounded-lg overflow-hidden bg-[#030617] shrink-0 shadow-2xs">
+                          <button
+                            type="button"
+                            onClick={() => handleStepGoals(index, 'golsMandante', -1)}
+                            disabled={!activeRound}
+                            className="w-6 h-7 flex items-center justify-center text-cyan-400 hover:bg-cyan-950/60 active:bg-cyan-900 cursor-pointer text-xs"
+                            title="Diminuir gol"
+                          >
+                            <Minus className="w-3 h-3" />
+                          </button>
+                          <input
+                            type="number"
+                            min="0"
+                            max="20"
+                            placeholder="-"
+                            value={line.golsMandante}
+                            onChange={(e) => handleMatchChange(index, 'golsMandante', e.target.value)}
+                            disabled={!activeRound}
+                            className="w-8 h-7 text-center text-xs font-black font-mono text-cyan-300 border-x border-cyan-800/50 bg-[#030617] focus:outline-hidden focus:bg-[#070e30]"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleStepGoals(index, 'golsMandante', 1)}
+                            disabled={!activeRound}
+                            className="w-6 h-7 flex items-center justify-center text-cyan-400 hover:bg-cyan-950/60 active:bg-cyan-900 cursor-pointer text-xs"
+                            title="Aumentar gol"
+                          >
+                            <Plus className="w-3 h-3" />
+                          </button>
+                        </div>
+
+                        <span className="text-xs font-black text-cyan-400/80 font-mono px-0.5">x</span>
+
+                        {/* Gols Visitante */}
+                        <div className="flex items-center border border-cyan-700/50 rounded-lg overflow-hidden bg-[#030617] shrink-0 shadow-2xs">
+                          <button
+                            type="button"
+                            onClick={() => handleStepGoals(index, 'golsVisitante', -1)}
+                            disabled={!activeRound}
+                            className="w-6 h-7 flex items-center justify-center text-cyan-400 hover:bg-cyan-950/60 active:bg-cyan-900 cursor-pointer text-xs"
+                            title="Diminuir gol"
+                          >
+                            <Minus className="w-3 h-3" />
+                          </button>
+                          <input
+                            type="number"
+                            min="0"
+                            max="20"
+                            placeholder="-"
+                            value={line.golsVisitante}
+                            onChange={(e) => handleMatchChange(index, 'golsVisitante', e.target.value)}
+                            disabled={!activeRound}
+                            className="w-8 h-7 text-center text-xs font-black font-mono text-cyan-300 border-x border-cyan-800/50 bg-[#030617] focus:outline-hidden focus:bg-[#070e30]"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleStepGoals(index, 'golsVisitante', 1)}
+                            disabled={!activeRound}
+                            className="w-6 h-7 flex items-center justify-center text-cyan-400 hover:bg-cyan-950/60 active:bg-cyan-900 cursor-pointer text-xs"
+                            title="Aumentar gol"
+                          >
+                            <Plus className="w-3 h-3" />
+                          </button>
+                        </div>
                       </div>
 
-                      {/* Middle X */}
-                      <div className="hidden sm:flex sm:col-span-1 justify-center items-center font-black text-neutral-300 text-xs pt-3">
-                        x
-                      </div>
-
-                      {/* Box 3: Away Score */}
-                      <div className="sm:col-span-2">
-                        <label className="block text-[9px] font-black uppercase tracking-wider text-neutral-400 mb-0.5 text-center">
-                          Gols
-                        </label>
-                        <select
-                          value={line.golsVisitante}
-                          onChange={(e) => handleMatchChange(index, 'golsVisitante', e.target.value)}
-                          disabled={!activeRound}
-                          className="w-full p-2.5 bg-white border border-neutral-300 rounded-lg text-xs font-black text-center text-neutral-800 focus:outline-hidden focus:ring-2 focus:ring-[#009739] cursor-pointer font-mono"
-                        >
-                          <option value="">-</option>
-                          {SCORE_OPTIONS.map((score) => (
-                            <option key={score} value={score}>{score}</option>
-                          ))}
-                        </select>
-                      </div>
-
-                      {/* Box 4: Away Team Selector */}
-                      <div className="sm:col-span-3">
-                        <label className="block text-[9px] font-black uppercase tracking-wider text-neutral-400 mb-0.5">
-                          Time Visitante
-                        </label>
+                      {/* Time Visitante */}
+                      <div className="sm:col-span-4">
                         <select
                           value={line.timeVisitante}
                           onChange={(e) => handleMatchChange(index, 'timeVisitante', e.target.value)}
                           disabled={!activeRound}
-                          className="w-full p-2.5 bg-white border border-neutral-300 rounded-lg text-xs font-bold text-neutral-800 focus:outline-hidden focus:ring-2 focus:ring-[#009739] cursor-pointer"
+                          className="w-full py-1.5 px-2 bg-[#04081c] border border-cyan-800/60 rounded-lg text-xs font-bold text-white focus:outline-hidden focus:ring-1 focus:ring-cyan-400 cursor-pointer"
                         >
-                          <option value="">-- Escolha o Time --</option>
+                          <option value="">-- Clube Visitante --</option>
                           {TEAMS_LIST.map((team) => (
                             <option key={team} value={team} disabled={team === line.timeMandante}>
                               {team}
@@ -864,19 +953,49 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
                       </div>
                     </div>
 
-                    {/* Captain input line */}
-                    <div className="mt-2.5 pt-2 border-t border-neutral-100 flex items-center gap-2">
-                      <label className="text-[10px] font-bold text-neutral-500 shrink-0">
-                        Capitão / Artilheiro do Jogo:
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="Ex: Haaland, Saka, Mbappé... (Opcional: +1 pt por gol)"
-                        value={line.capitao}
-                        onChange={(e) => handleMatchChange(index, 'capitao', e.target.value)}
-                        disabled={!activeRound}
-                        className="w-full px-2.5 py-1 text-xs border border-neutral-200 rounded-md bg-white focus:outline-hidden focus:ring-1 focus:ring-[#009739] font-medium text-neutral-700 placeholder:text-neutral-350"
-                      />
+                    {/* Linha Inferior: Atalhos de Placares Comuns + Capitão */}
+                    <div className="mt-2 pt-2 border-t border-cyan-950 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      {/* Sugestões de Placares Comuns */}
+                      <div className="flex items-center gap-1 overflow-x-auto py-0.5 scrollbar-none">
+                        <span className="text-[10px] font-bold text-slate-400 shrink-0 mr-0.5 font-mono">
+                          Atalhos:
+                        </span>
+                        {COMMON_SCORE_SUGGESTIONS.map((preset) => {
+                          const isSelected = line.golsMandante === preset.m && line.golsVisitante === preset.v;
+                          return (
+                            <button
+                              key={preset.label}
+                              type="button"
+                              onClick={() => handleApplyPresetToMatch(index, preset.m, preset.v)}
+                              disabled={!activeRound}
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold cursor-pointer transition-colors border ${
+                                isSelected
+                                  ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white border-cyan-300 shadow-md shadow-cyan-950/60 font-black'
+                                  : 'bg-[#09133d] hover:bg-cyan-950 text-cyan-300 border-cyan-800/60'
+                              }`}
+                              title={`Definir ${preset.label}`}
+                            >
+                              {preset.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Capitão do Jogo */}
+                      <div className="flex items-center gap-1.5 shrink-0 sm:max-w-xs w-full sm:w-auto">
+                        <span className="text-[10px] font-bold text-amber-400 flex items-center gap-0.5 shrink-0 font-mono">
+                          <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                          Capitão:
+                        </span>
+                        <input
+                          type="text"
+                          placeholder="Haaland, Saka, Mbappé... (+1 pt)"
+                          value={line.capitao}
+                          onChange={(e) => handleMatchChange(index, 'capitao', e.target.value)}
+                          disabled={!activeRound}
+                          className="w-full sm:w-44 px-2 py-1 text-[11px] border border-cyan-800/60 rounded-md bg-[#04081c] focus:outline-hidden focus:ring-1 focus:ring-cyan-400 font-medium text-slate-100 placeholder:text-slate-500"
+                        />
+                      </div>
                     </div>
                   </div>
                 );
@@ -887,13 +1006,13 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
             {statusMsg && (
               <div className={`p-4 rounded-xl flex items-start gap-3 border text-sm ${
                 statusMsg.type === 'success' 
-                  ? 'bg-emerald-50 border-emerald-100 text-emerald-800' 
-                  : 'bg-rose-50 border-rose-100 text-rose-800'
+                  ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-200' 
+                  : 'bg-rose-950/60 border-rose-500/50 text-rose-200'
               }`}>
                 {statusMsg.type === 'success' ? (
-                  <CheckCircle className="w-5 h-5 shrink-0 text-emerald-500" />
+                  <CheckCircle className="w-5 h-5 shrink-0 text-emerald-400" />
                 ) : (
-                  <AlertCircle className="w-5 h-5 shrink-0 text-rose-500" />
+                  <AlertCircle className="w-5 h-5 shrink-0 text-rose-400" />
                 )}
                 <span className="font-semibold">{statusMsg.text}</span>
               </div>
@@ -903,15 +1022,16 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
               <button
                 type="submit"
                 disabled={submitting || !activeRound}
-                className="w-full py-4 text-white bg-[#009739] hover:bg-[#007a2e] active:bg-[#005a20] rounded-xl font-black text-lg cursor-pointer transition-all flex items-center justify-center gap-2 shadow-sm disabled:bg-neutral-250 disabled:text-neutral-400 disabled:cursor-not-allowed uppercase tracking-wider"
+                className="w-full py-4 text-white bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:from-cyan-400 hover:to-blue-500 active:scale-[0.99] rounded-xl font-black text-lg cursor-pointer transition-all flex items-center justify-center gap-2 shadow-xl shadow-cyan-950/60 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed uppercase tracking-wider font-display"
               >
-                {submitting ? 'Gravando Palpites...' : 'ENVIAR PALPITE OFICIAL'}
+                <UclStarball className="w-5 h-5 text-white" glow />
+                {submitting ? 'Gravando Palpites da Champions...' : 'ENVIAR PALPITE DA CHAMPIONS'}
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
                 </svg>
               </button>
-              <p className="text-neutral-400 text-[10px] mt-2 font-mono text-center">
-                ★ Você pode substituir enviando uma 2ª vez. Apenas o último envio oficial será computado pela apuração.
+              <p className="text-slate-400 text-[10px] mt-2 font-mono text-center">
+                ★ 2 Envios por rodada permitidos. O último envio válido antes das terças 13:00 é o considerado.
               </p>
             </div>
           </form>
@@ -921,18 +1041,19 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
 
         {/* Right side widgets column - 1/3 width */}
         <aside className="w-full lg:w-1/3 flex flex-col gap-6 shrink-0">
-          {/* Top 5 Leaderboard widget */}
-          <div className="bg-white border border-neutral-200 rounded-2xl p-6 shadow-xs flex flex-col">
-            <h3 className="font-black text-neutral-800 uppercase tracking-tight text-xs mb-4 flex items-center gap-2">
-              <svg className="w-4 h-4 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-              </svg>
-              Top 5 Classificação
+          {/* Top 5 Leaderboard widget - Champions League Table */}
+          <div className="bg-[#080f33]/90 border border-cyan-500/25 rounded-2xl p-6 shadow-xl flex flex-col backdrop-blur-md">
+            <h3 className="font-black text-white uppercase tracking-tight text-xs mb-4 flex items-center gap-2 font-display">
+              <UclTrophy className="w-4 h-4 text-cyan-300" />
+              <span>Top 5 • Fase de Liga</span>
             </h3>
 
             <div className="space-y-2">
               {[...participantes]
-                .sort((a,b) => b.pontos - a.pontos)
+                .sort((a,b) => {
+                  if (b.pontos !== a.pontos) return b.pontos - a.pontos;
+                  return (b.acertos_placar || 0) - (a.acertos_placar || 0);
+                })
                 .slice(0, 5)
                 .map((p, idx) => {
                   const place = idx + 1;
@@ -940,70 +1061,79 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
                   return (
                     <div 
                       key={p.id} 
-                      className={`flex justify-between items-center p-3 rounded-lg border transition-all ${
+                      className={`flex justify-between items-center p-3 rounded-xl border transition-all ${
                         isFirst 
-                          ? 'bg-green-50/70 border-green-200 text-[#166534]' 
-                          : 'bg-neutral-50/50 border-neutral-200 text-neutral-800 text-sm'
+                          ? 'bg-gradient-to-r from-[#172554] to-[#0c184d] border-cyan-400/50 text-white shadow-md' 
+                          : 'bg-[#050b24]/80 border-cyan-900/40 text-slate-200'
                       }`}
                     >
                       <div className="flex items-center gap-2.5">
                         <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${
-                          isFirst ? 'bg-amber-100 text-amber-800' : 'bg-neutral-200 text-neutral-600'
+                          isFirst ? 'bg-amber-400 text-black shadow-xs' : 'bg-slate-800 text-slate-300'
                         }`}>
                           {place}
                         </span>
                         <span className="font-bold text-xs truncate max-w-[120px]">{p.nome}</span>
+                        {isFirst && (
+                          <span className="text-[9px] text-amber-300 font-mono font-bold">★ LÍDER</span>
+                        )}
                       </div>
-                      <span className="font-mono font-black text-xs">{p.pontos} Pts</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-cyan-400 font-mono font-bold">🎯 {p.acertos_placar ?? 0}</span>
+                        <span className="font-mono font-black text-xs text-white">{p.pontos} Pts</span>
+                      </div>
                     </div>
                   );
                 })}
               {participantes.length === 0 && (
-                <div className="text-center text-xs text-neutral-400 py-4">Nenhum participante registrado.</div>
+                <div className="text-center text-xs text-slate-400 py-4">Nenhum participante registrado.</div>
               )}
             </div>
           </div>
 
-          {/* Scoring Rules Widget */}
-          <div className="bg-white border border-neutral-200 rounded-2xl p-6 shadow-xs flex flex-col">
-            <h3 className="font-black text-neutral-800 uppercase tracking-tight text-xs mb-3 flex items-center gap-2">
-              <Award className="w-4 h-4 text-[#009739]" />
-              Regras Oficiais de Pontuação
+          {/* Scoring Rules Widget - Champions League Theme */}
+          <div className="bg-[#080f33]/90 border border-cyan-500/25 rounded-2xl p-6 shadow-xl flex flex-col backdrop-blur-md">
+            <h3 className="font-black text-white uppercase tracking-tight text-xs mb-3 flex items-center gap-2 font-display">
+              <Award className="w-4 h-4 text-cyan-400" />
+              <span>Regras de Pontuação UCL</span>
             </h3>
 
-            <div className="space-y-2 text-xs text-neutral-600">
-              <div className="p-2.5 rounded-lg bg-neutral-50 border border-neutral-150 flex items-center justify-between">
-                <span className="font-semibold">Acertar Resultado (Vencedor/Empate)</span>
-                <span className="font-mono font-black text-[#009739] text-xs">+3 Pts</span>
+            <div className="space-y-2 text-xs text-slate-300">
+              <div className="p-2.5 rounded-xl bg-[#050b24]/90 border border-cyan-900/50 flex items-center justify-between">
+                <span className="font-medium">Acertar Resultado (Vencedor/Empate)</span>
+                <span className="font-mono font-black text-cyan-400 text-xs">+3 Pts</span>
               </div>
-              <div className="p-2.5 rounded-lg bg-neutral-50 border border-neutral-150 flex items-center justify-between">
-                <span className="font-semibold">Acertar Placar Exato</span>
-                <span className="font-mono font-black text-[#009739] text-xs">+2 Pts</span>
+              <div className="p-2.5 rounded-xl bg-[#050b24]/90 border border-cyan-900/50 flex items-center justify-between">
+                <span className="font-medium">Acertar Placar Exato</span>
+                <span className="font-mono font-black text-cyan-400 text-xs">+2 Pts</span>
               </div>
-              <div className="p-2.5 rounded-lg bg-emerald-50/60 border border-emerald-150 flex items-center justify-between">
-                <span className="font-semibold">Placar Exato Completo (Resultado + Placar)</span>
-                <span className="font-mono font-black text-[#009739] text-xs">5 Pts</span>
+              <div className="p-2.5 rounded-xl bg-[#0a184a]/90 border border-cyan-500/40 flex items-center justify-between text-white">
+                <span className="font-bold flex items-center gap-1">
+                  <UclStarball className="w-3 h-3 text-cyan-300" />
+                  Placar Exato Completo
+                </span>
+                <span className="font-mono font-black text-cyan-300 text-xs">5 Pts</span>
               </div>
-              <div className="p-2.5 rounded-lg bg-neutral-50 border border-neutral-150 flex items-center justify-between">
-                <span className="font-semibold">Placar 0x0 sem Capitão</span>
-                <span className="font-mono font-black text-amber-700 text-xs">6 Pts</span>
+              <div className="p-2.5 rounded-xl bg-[#050b24]/90 border border-cyan-900/50 flex items-center justify-between">
+                <span className="font-medium">Placar 0x0 sem Capitão</span>
+                <span className="font-mono font-black text-amber-400 text-xs">6 Pts</span>
               </div>
-              <div className="p-2.5 rounded-lg bg-neutral-50 border border-neutral-150 flex items-center justify-between">
-                <span className="font-semibold">Placar 0x0 com Capitão</span>
-                <span className="font-mono font-black text-amber-700 text-xs">5 Pts</span>
+              <div className="p-2.5 rounded-xl bg-[#050b24]/90 border border-cyan-900/50 flex items-center justify-between">
+                <span className="font-medium">Placar 0x0 com Capitão</span>
+                <span className="font-mono font-black text-amber-400 text-xs">5 Pts</span>
               </div>
-              <div className="p-2.5 rounded-lg bg-neutral-50 border border-neutral-150 flex items-center justify-between">
-                <span className="font-semibold">Gol do Capitão Indicado</span>
-                <span className="font-mono font-black text-[#009739] text-xs">+1 Pt / gol</span>
+              <div className="p-2.5 rounded-xl bg-[#050b24]/90 border border-cyan-900/50 flex items-center justify-between">
+                <span className="font-medium">Gol do Capitão Indicado</span>
+                <span className="font-mono font-black text-cyan-400 text-xs">+1 Pt / gol</span>
               </div>
             </div>
           </div>
 
           {/* Audit Logs Widget */}
-          <div className="bg-white border border-neutral-200 rounded-2xl p-6 shadow-xs flex flex-col">
-            <h3 className="font-black text-neutral-800 uppercase tracking-tight text-xs mb-3 flex items-center gap-2">
-              <Clock className="w-4 h-4 text-neutral-400" />
-              Auditoria de Transações
+          <div className="bg-[#080f33]/90 border border-cyan-500/25 rounded-2xl p-6 shadow-xl flex flex-col backdrop-blur-md">
+            <h3 className="font-black text-white uppercase tracking-tight text-xs mb-3 flex items-center gap-2 font-display">
+              <Clock className="w-4 h-4 text-cyan-400" />
+              <span>Auditoria de Transações UCL</span>
             </h3>
 
             <div className="space-y-2.5 max-h-[224px] overflow-y-auto pr-1">
@@ -1014,25 +1144,25 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
                   : '';
                 
                 return (
-                  <div key={log.id} className="text-[11px] border-b border-neutral-50 last:border-0 pb-2 last:pb-0 flex flex-col gap-1">
+                  <div key={log.id} className="text-[11px] border-b border-cyan-950 pb-2 last:pb-0 flex flex-col gap-1">
                     <div className="flex items-center justify-between gap-1">
                       <div className="flex items-center gap-1.5">
                         <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${
-                          log.status === 'SUCESSO' ? 'bg-emerald-500' :
-                          log.status === 'ALERTA' ? 'bg-amber-500' : 'bg-neutral-400'
+                          log.status === 'SUCESSO' ? 'bg-cyan-400 shadow-xs shadow-cyan-400' :
+                          log.status === 'ALERTA' ? 'bg-amber-400' : 'bg-slate-500'
                         }`} />
-                        <span className="font-mono text-neutral-400 font-bold">{timeStr}</span>
+                        <span className="font-mono text-cyan-300 font-bold">{timeStr}</span>
                       </div>
-                      <span className="font-mono text-[9px] text-neutral-350">{log.id}</span>
+                      <span className="font-mono text-[9px] text-slate-500">{log.id}</span>
                     </div>
-                    <p className="text-neutral-600 leading-relaxed font-semibold pr-1 break-words">
+                    <p className="text-slate-300 leading-relaxed font-medium pr-1 break-words">
                       {log.evento}
                     </p>
                   </div>
                 );
               })}
               {auditLogs.length === 0 && (
-                <div className="text-center text-xs text-neutral-400 py-6">Nenhum evento registrado.</div>
+                <div className="text-center text-xs text-slate-500 py-6">Nenhum evento registrado.</div>
               )}
             </div>
           </div>
@@ -1040,7 +1170,7 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
       </div>
 
       {/* Histórico de Rodadas Anteriores & Pontuações Detalhadas */}
-      <div className="pt-8 border-t-2 border-neutral-200">
+      <div className="pt-8 border-t border-cyan-500/20">
         <HistoricoRodadas initialRoundId={selectedClosedRound || (closedRounds.length > 0 ? closedRounds[0].id : undefined)} />
       </div>
     </div>

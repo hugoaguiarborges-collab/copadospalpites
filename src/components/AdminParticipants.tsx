@@ -10,7 +10,8 @@ import {
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { Participante } from '../types';
-import { Plus, Trash, Edit, Check, X, ShieldAlert } from 'lucide-react';
+import { Plus, Trash, Edit, Check, X, ShieldAlert, Users } from 'lucide-react';
+import { UclStarball, UclBadge, UclTrophy } from './UclAssets';
 
 export default function AdminParticipants() {
   const [participants, setParticipants] = useState<Participante[]>([]);

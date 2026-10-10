@@ -20,6 +20,7 @@ import {
   LockIcon,
   CheckCircle2
 } from 'lucide-react';
+import { UclStarball, UclTrophy, UclBadge, UclLogo } from './UclAssets';
 
 export default function AdminPage() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -127,70 +128,85 @@ export default function AdminPage() {
     await signOut(auth);
   };
 
-  // Login view fallback
+  // Login view fallback - UEFA Champions League Portal
   if (!isAuthenticated) {
     return (
       <div className="max-w-md mx-auto py-12 px-4">
-        <div className="bg-white rounded-2xl border border-neutral-150 p-6 md:p-8 shadow-xs text-center space-y-6">
-          <div className="inline-flex p-3 rounded-full bg-neutral-50 border border-neutral-100 text-neutral-600">
-            <Lock className="w-6 h-6" />
+        <div className="bg-[#080f33]/95 rounded-2xl border border-cyan-500/35 p-6 md:p-8 shadow-2xl shadow-cyan-950/80 text-center space-y-6 text-white backdrop-blur-xl">
+          <div className="flex justify-center">
+            <div className="relative">
+              <div className="w-16 h-16 rounded-full bg-gradient-to-b from-[#0a1545] to-[#04081c] border border-cyan-400/50 flex items-center justify-center shadow-lg shadow-cyan-950/80">
+                <UclStarball className="w-10 h-10 text-cyan-300" glow />
+              </div>
+            </div>
           </div>
           
           <div className="space-y-1">
-            <h2 className="text-2xl font-display font-bold text-neutral-800">Acesso Restrito</h2>
-            <p className="text-xs text-neutral-400">Entre com as credenciais administrativas para gerenciar a competição.</p>
+            <div className="flex justify-center">
+              <UclBadge text="UEFA ADMIN PORTAL" variant="cyan" />
+            </div>
+            <h2 className="text-2xl font-black font-display uppercase tracking-tight text-white mt-2">
+              Acesso Administrativo
+            </h2>
+            <p className="text-xs text-slate-400 font-mono">
+              Painel restrito de gerenciamento da Copa dos Palpites Champions League.
+            </p>
           </div>
 
           {errorMsg && (
-            <div className="p-3 bg-rose-50 border border-rose-100 text-rose-850 text-xs rounded-md text-left">
+            <div className="p-3 bg-rose-950/80 border border-rose-500/40 text-rose-300 text-xs rounded-xl text-left font-mono">
               {errorMsg}
             </div>
           )}
 
           <form onSubmit={handleCustomLogin} className="space-y-4 text-left">
             <div>
-              <label htmlFor="adm-login" className="block text-[10px] font-black uppercase tracking-wider text-neutral-505 mb-1">Usuário Administrador</label>
+              <label htmlFor="adm-login" className="block text-[10px] font-black uppercase tracking-wider text-slate-300 mb-1 font-mono">
+                Usuário Administrador
+              </label>
               <input
                 id="adm-login"
                 type="text"
                 placeholder="Nome de usuário"
                 value={login}
                 onChange={(e) => setLogin(e.target.value)}
-                className="w-full px-3 py-2.5 bg-neutral-50 border border-neutral-200 rounded-lg text-sm text-neutral-800 focus:outline-hidden focus:ring-1 focus:ring-[#009739] font-bold"
+                className="w-full px-3 py-2.5 bg-[#04081c] border border-cyan-800/60 rounded-xl text-sm text-white focus:outline-hidden focus:ring-1 focus:ring-cyan-400 font-bold placeholder:text-slate-500"
               />
             </div>
             <div>
-              <label htmlFor="adm-pass" className="block text-[10px] font-black uppercase tracking-wider text-neutral-505 mb-1">Senha</label>
+              <label htmlFor="adm-pass" className="block text-[10px] font-black uppercase tracking-wider text-slate-300 mb-1 font-mono">
+                Senha
+              </label>
               <input
                 id="adm-pass"
                 type="password"
                 placeholder="Senha de acesso"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-3 py-2.5 bg-neutral-50 border border-neutral-200 rounded-lg text-sm text-neutral-800 focus:outline-hidden focus:ring-1 focus:ring-[#009739] font-bold"
+                className="w-full px-3 py-2.5 bg-[#04081c] border border-cyan-800/60 rounded-xl text-sm text-white focus:outline-hidden focus:ring-1 focus:ring-cyan-400 font-bold placeholder:text-slate-500"
               />
             </div>
 
             <button
               type="submit"
               disabled={loginLoading}
-              className="w-full py-3 bg-[#009739] hover:bg-[#007a2e] text-white rounded-xl text-xs font-black uppercase tracking-wider transition-colors cursor-pointer shadow-xs"
+              className="w-full py-3 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer shadow-md shadow-cyan-950/60 font-mono"
             >
-              {loginLoading ? 'Conectando...' : 'Entrar com Senha'}
+              {loginLoading ? 'Conectando ao Painel UEFA...' : 'Entrar com Senha'}
             </button>
           </form>
 
           {/* Social Google developer options */}
           <div className="relative flex py-2 items-center">
-            <div className="flex-grow border-t border-neutral-100"></div>
-            <span className="flex-shrink mx-4 text-[9px] font-mono text-neutral-400 uppercase tracking-widest font-black">ou</span>
-            <div className="flex-grow border-t border-neutral-100"></div>
+            <div className="flex-grow border-t border-cyan-950"></div>
+            <span className="flex-shrink mx-4 text-[9px] font-mono text-slate-500 uppercase tracking-widest font-black">ou</span>
+            <div className="flex-grow border-t border-cyan-950"></div>
           </div>
 
           <button
             onClick={handleGoogleLogin}
             type="button"
-            className="w-full py-2.5 bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-700 rounded-lg text-xs font-bold flex items-center justify-center gap-2 cursor-pointer transition-colors"
+            className="w-full py-2.5 bg-[#050b28] border border-cyan-500/30 hover:border-cyan-400 text-slate-200 rounded-xl text-xs font-bold flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-inner"
           >
             <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
               <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -201,8 +217,8 @@ export default function AdminPage() {
             Entrar com Google do Desenvolvedor
           </button>
           
-          <p className="text-[10px] font-mono text-neutral-400">
-            ★ Credenciais de Teste: <span className="font-semibold text-neutral-500">admincopa / 1234</span>
+          <p className="text-[10px] font-mono text-slate-500">
+            ★ Credenciais de Teste: <span className="font-semibold text-cyan-300">admincopa / 1234</span>
           </p>
         </div>
       </div>
@@ -210,81 +226,77 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="space-y-8">
-      {/* Admin header */}
-      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 border-b border-neutral-200 pb-4">
+    <div className="space-y-6">
+      {/* Admin header - UEFA Champions League Match Center Grade */}
+      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 border-b border-cyan-500/20 pb-4">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-neutral-800 uppercase flex items-center gap-2">
-            <span className="w-2.5 h-6 bg-[#009739] block rounded-sm"></span>
-            Supervisão Administrativa
+          <div className="flex items-center gap-2 mb-1">
+            <UclBadge text="UEFA CONTROL ROOM" variant="cyan" />
+            <span className="text-[10px] text-slate-400 font-mono">GERENCIAMENTO GERAL</span>
+          </div>
+          <h1 className="text-2xl font-black tracking-tight text-white uppercase flex items-center gap-2.5 font-display drop-shadow-sm">
+            <div className="w-2.5 h-6 bg-gradient-to-b from-cyan-400 to-blue-600 rounded-xs shadow-xs" />
+            Supervisão Administrativa da Champions
           </h1>
-          <p className="text-xs text-neutral-400 mt-1 uppercase font-bold">
-            Logado como: <span className="font-mono text-green-700 font-bold">{googleUser ? googleUser.email : 'Admin Local'}</span>
+          <p className="text-xs text-slate-400 mt-1 uppercase font-bold font-mono">
+            Logado como: <span className="text-cyan-300 font-bold">{googleUser ? googleUser.email : 'Admin Local'}</span>
           </p>
         </div>
 
         <button
           onClick={handleSignOut}
-          className="self-start inline-flex items-center gap-1.5 px-3 py-1.5 border border-neutral-200 text-neutral-500 hover:text-neutral-850 hover:bg-neutral-50 rounded-lg text-xs font-bold cursor-pointer transition-all uppercase tracking-wider"
+          className="self-start inline-flex items-center gap-1.5 px-3 py-1.5 border border-cyan-500/30 bg-[#050b28] text-slate-300 hover:text-white hover:border-cyan-400 rounded-lg text-xs font-bold cursor-pointer transition-all uppercase tracking-wider font-mono shadow-xs"
         >
-          <LogOut className="w-3.5 h-3.5" /> Sair do Painel
+          <LogOut className="w-3.5 h-3.5 text-cyan-400" /> Sair do Painel
         </button>
       </div>
 
-      {/* Tabs navigation row */}
-      <div className="flex overflow-x-auto gap-1 border-b border-neutral-200 pb-0.5">
+      {/* Tabs navigation row - UEFA Segmented Controls */}
+      <div className="flex overflow-x-auto gap-1 bg-[#050b28] p-1.5 rounded-xl border border-cyan-500/25 shadow-lg shadow-cyan-950/40">
         <button
           onClick={() => setActiveTab('participants')}
-          className={`px-4 py-2 text-xs font-bold uppercase transition-all whitespace-nowrap cursor-pointer border-b-2 ${
+          className={`px-4 py-2 text-xs font-bold uppercase transition-all whitespace-nowrap cursor-pointer rounded-lg font-mono flex items-center gap-1.5 ${
             activeTab === 'participants'
-              ? 'border-[#009739] text-[#009739] font-black'
-              : 'border-transparent text-neutral-400 hover:text-neutral-600'
+              ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-black shadow-md border border-cyan-300/40'
+              : 'text-slate-300 hover:text-white hover:bg-white/5'
           }`}
         >
-          <span className="flex items-center gap-1.5">
-            <Users className="w-3.5 h-3.5" /> Participantes
-          </span>
+          <Users className="w-3.5 h-3.5 text-cyan-400" /> Participantes
         </button>
         <button
           onClick={() => setActiveTab('results')}
-          className={`px-4 py-2 text-xs font-bold uppercase transition-all whitespace-nowrap cursor-pointer border-b-2 ${
+          className={`px-4 py-2 text-xs font-bold uppercase transition-all whitespace-nowrap cursor-pointer rounded-lg font-mono flex items-center gap-1.5 ${
             activeTab === 'results'
-              ? 'border-[#009739] text-[#009739] font-black'
-              : 'border-transparent text-neutral-400 hover:text-neutral-600'
+              ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-black shadow-md border border-cyan-300/40'
+              : 'text-slate-300 hover:text-white hover:bg-white/5'
           }`}
         >
-          <span className="flex items-center gap-1.5">
-            <CheckSquare className="w-3.5 h-3.5" /> Avaliar Palpites
-          </span>
+          <CheckSquare className="w-3.5 h-3.5 text-cyan-400" /> Avaliar Palpites
         </button>
         <button
           onClick={() => setActiveTab('scores')}
-          className={`px-4 py-2 text-xs font-bold uppercase transition-all whitespace-nowrap cursor-pointer border-b-2 ${
+          className={`px-4 py-2 text-xs font-bold uppercase transition-all whitespace-nowrap cursor-pointer rounded-lg font-mono flex items-center gap-1.5 ${
             activeTab === 'scores'
-              ? 'border-[#009739] text-[#009739] font-black'
-              : 'border-transparent text-neutral-400 hover:text-neutral-600'
+              ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-black shadow-md border border-cyan-300/40'
+              : 'text-slate-300 hover:text-white hover:bg-white/5'
           }`}
         >
-          <span className="flex items-center gap-1.5">
-            <Coins className="w-3.5 h-3.5" /> Ajustar Pontuações
-          </span>
+          <Coins className="w-3.5 h-3.5 text-cyan-400" /> Ajustar Pontuações
         </button>
         <button
           onClick={() => setActiveTab('rounds')}
-          className={`px-4 py-2 text-xs font-bold uppercase transition-all whitespace-nowrap cursor-pointer border-b-2 ${
+          className={`px-4 py-2 text-xs font-bold uppercase transition-all whitespace-nowrap cursor-pointer rounded-lg font-mono flex items-center gap-1.5 ${
             activeTab === 'rounds'
-              ? 'border-[#009739] text-[#009739] font-black'
-              : 'border-transparent text-neutral-400 hover:text-neutral-600'
+              ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-black shadow-md border border-cyan-300/40'
+              : 'text-slate-300 hover:text-white hover:bg-white/5'
           }`}
         >
-          <span className="flex items-center gap-1.5">
-            <Calendar className="w-3.5 h-3.5" /> Rodadas
-          </span>
+          <Calendar className="w-3.5 h-3.5 text-cyan-400" /> Rodadas
         </button>
       </div>
 
       {/* Grid content panels */}
-      <div className="bg-white rounded-2xl border border-neutral-100 p-6 md:p-8 shadow-xs">
+      <div className="bg-[#080f33]/90 rounded-2xl border border-cyan-500/25 p-6 md:p-8 shadow-2xl backdrop-blur-md text-white">
         {activeTab === 'participants' && <AdminParticipants />}
         {activeTab === 'results' && <AdminResults />}
         {activeTab === 'scores' && <AdminScores />}
