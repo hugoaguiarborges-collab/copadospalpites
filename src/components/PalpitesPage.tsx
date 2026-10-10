@@ -11,7 +11,32 @@ import {
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { Participante, Rodada, Palpite } from '../types';
-import { Sparkles, Calendar, CheckCircle, AlertCircle, ShieldAlert, Award, User, Star, Clock, FileText, Check, AlertTriangle, Info } from 'lucide-react';
+import { TEAMS_LIST } from '../constants/teams';
+import { 
+  Sparkles, 
+  Calendar, 
+  CheckCircle, 
+  AlertCircle, 
+  ShieldAlert, 
+  Award, 
+  User, 
+  Star, 
+  Clock, 
+  FileText, 
+  Check, 
+  AlertTriangle, 
+  Info,
+  Plus,
+  Trash2,
+  RotateCcw,
+  Lock,
+  Unlock,
+  Users,
+  Eye
+} from 'lucide-react';
+import { getNextTuesday13h, formatDateTimeDisplay, isMarketOpen, getRoundNumber } from '../utils/dateUtils';
+import TabelaParticipacao from './TabelaParticipacao';
+import HistoricoRodadas from './HistoricoRodadas';
 
 interface AuditLogEntry {
   id: string;
@@ -20,6 +45,16 @@ interface AuditLogEntry {
   status: 'SUCESSO' | 'ALERTA' | 'INFO';
   origem: string;
 }
+
+export interface MatchGuessLine {
+  timeMandante: string;
+  golsMandante: string;
+  golsVisitante: string;
+  timeVisitante: string;
+  capitao: string;
+}
+
+const SCORE_OPTIONS = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15'];
 
 interface PalpitesPageProps {
   onSuggestName?: (name: string) => void;
@@ -34,12 +69,14 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
   const [nome, setNome] = useState('');
   const [confirmacaoNome, setConfirmacaoNome] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [guessLines, setGuessLines] = useState<{ palpite: string; capitao: string }[]>([
-    { palpite: '', capitao: '' },
-    { palpite: '', capitao: '' },
-    { palpite: '', capitao: '' },
-    { palpite: '', capitao: '' },
-    { palpite: '', capitao: '' }
+  
+  // Structured match lines with dropdown selectors
+  const [matchLines, setMatchLines] = useState<MatchGuessLine[]>([
+    { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '', capitao: '' },
+    { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '', capitao: '' },
+    { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '', capitao: '' },
+    { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '', capitao: '' },
+    { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '', capitao: '' }
   ]);
   
   // Submission result states
@@ -52,6 +89,7 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
   const [selectedClosedRound, setSelectedClosedRound] = useState<string>('');
   const [closedRoundGuesses, setClosedRoundGuesses] = useState<Palpite[]>([]);
   const [loadingGuesses, setLoadingGuesses] = useState(false);
+  const [closedViewMode, setClosedViewMode] = useState<'tabela' | 'cards'>('tabela');
 
   // Countdown timer state
   const [timeLeft, setTimeLeft] = useState<{ days: number; hours: number; minutes: number; seconds: number } | null>(null);
@@ -108,22 +146,10 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
       } catch {
         // Fallback
       }
-    } else {
-      const initialLogs: AuditLogEntry[] = [
-        {
-          id: 'TX-INIT-' + Math.random().toString(36).substr(2, 5).toUpperCase(),
-          timestamp: new Date().toISOString(),
-          evento: 'Painel de palpites carregado. Filtros de sigilo absoluto ativos.',
-          status: 'INFO',
-          origem: 'Sessão Local Browser'
-        }
-      ];
-      setAuditLogs(initialLogs);
-      localStorage.setItem('copapalpites_audit_log_v2', JSON.stringify(initialLogs));
     }
   }, []);
 
-  // Load participants and rounds on boot
+  // Real-time synchronization
   useEffect(() => {
     async function loadData() {
       try {
@@ -136,110 +162,79 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
 
         const rSnap = await getDocs(collection(db, 'rodadas'));
         const rList: Rodada[] = [];
-        const nowStr = new Date().toISOString();
-
-        for (const rDoc of rSnap.docs) {
-          const rId = rDoc.id;
-          const rData = rDoc.data() as Rodada;
-          
-          // "Garanta que após o horário de fechamento, a rodada seja marcada como 'encerrada'"
-          if (rData.status === 'aberta' && rData.fechamento <= nowStr && rId !== 'round-teste') {
-            try {
-              await updateDoc(doc(db, 'rodadas', rId), { status: 'encerrada' });
-              rList.push({ id: rId, ...rData, status: 'encerrada' });
-            } catch (err) {
-              console.error(`Error auto-closing round ${rId} on page load:`, err);
-              rList.push({ id: rId, ...rData });
-            }
-          } else {
-            rList.push({ id: rId, ...rData });
-          }
-        }
+        rSnap.forEach((doc) => {
+          rList.push({ id: doc.id, ...doc.data() } as Rodada);
+        });
+        rList.sort((a,b) => getRoundNumber(a.nome || a.id) - getRoundNumber(b.nome || b.id));
         setRounds(rList);
 
-        // Find currently open round
-        // Let's check if there is an active open round whose opening time has passed but has not closed yet
-        const open = rList.find(r => r.status === 'aberta' && r.abertura <= nowStr && r.fechamento > nowStr);
-        if (open) {
-          setActiveRound(open);
-        } else {
-          // If no explicitly active round currently, find the scheduled open round that starts soonest in the future OR has not closed yet
-          const sortedActive = rList
-            .filter(r => r.status === 'aberta' && r.fechamento > nowStr)
-            .sort((a,b) => new Date(a.abertura).getTime() - new Date(b.abertura).getTime());
-          if (sortedActive.length > 0) {
-            setActiveRound(sortedActive[0]);
-          } else {
-            setActiveRound(null);
-          }
-        }
+        const now = new Date();
+        // Se a rodada de teste estiver cadastrada e ativa (aberta), dar prioridade total a ela
+        const testRoundOpen = rList.find(r => (r.is_test || r.id === 'rodada-teste') && r.status === 'aberta');
+        // A rodada está aberta se status === 'aberta' e ainda não passou da data de fechamento
+        const standardOpen = rList.find(r => r.status === 'aberta' && now < new Date(r.fechamento));
+        const open = testRoundOpen || standardOpen;
+        setActiveRound(open || null);
 
-        // Closed rounds (only if status is 'encerrada', or it is the special test round 'round-teste')
-        // This satisfies: "O sistema deve ocultar completamente a exibição dos palpites de todos os usuários, incluindo administradores, se o status da rodada for 'aberta' (exceto para a rodada especial 'round-teste')."
-        const closed = rList.filter(r => r.status === 'encerrada' || r.id === 'round-teste');
+        // Rodadas com mercado fechado: status === 'encerrada' OU a data de fechamento já foi ultrapassada
+        const closed = rList.filter(r => r.status === 'encerrada' || (now >= new Date(r.fechamento) && !r.is_test));
+        closed.sort((a,b) => getRoundNumber(b.nome || b.id) - getRoundNumber(a.nome || a.id));
         setClosedRounds(closed);
-        if (closed.length > 0) {
-          // Default to the most recently closed round
-          const sortedClosed = [...closed].sort((a, b) => new Date(b.fechamento).getTime() - new Date(a.fechamento).getTime());
-          setSelectedClosedRound(sortedClosed[0].id);
+
+        if (closed.length > 0 && !selectedClosedRound) {
+          setSelectedClosedRound(closed[0].id);
         }
-        
-        // Log successful boot with active round name
-        const activeName = open ? open.nome : (rList.find(r => r.status === 'aberta' && r.fechamento > nowStr)?.nome || 'Nenhuma');
-        addAuditLog(`Rodadas sincronizadas com sucesso. Mercado em vigor: ${activeName}`, 'SUCESSO');
-      } catch (err) {
-        addAuditLog(`Falha na sincronização inicial dos dados das rodadas.`, 'ALERTA');
-        console.error("Error loading initial data in PalpitesPage", err);
+      } catch (err: any) {
+        console.error("Error loading palpites data:", err);
       }
     }
-    loadData();
-  }, []);
 
-  // Fetch closed round guesses when selection changes
+    loadData();
+    const interval = setInterval(loadData, 15000);
+    return () => clearInterval(interval);
+  }, [selectedClosedRound]);
+
+  // Load guesses of closed round
   useEffect(() => {
-    if (!selectedClosedRound) {
-      setClosedRoundGuesses([]);
-      return;
-    }
     async function loadClosedGuesses() {
-      // Security Check: If the selected round is still open and not 'round-teste', do not query or display its guesses
-      const targetRoundObj = rounds.find(r => r.id === selectedClosedRound);
-      if (targetRoundObj && targetRoundObj.status === 'aberta' && targetRoundObj.id !== 'round-teste') {
+      if (!selectedClosedRound) {
+        setClosedRoundGuesses([]);
+        return;
+      }
+      
+      const targetRound = rounds.find(r => r.id === selectedClosedRound);
+      const nowISO = new Date().toISOString();
+      const isActuallyClosed = targetRound && (targetRound.status === 'encerrada' || targetRound.fechamento <= nowISO);
+      
+      if (!isActuallyClosed) {
         setClosedRoundGuesses([]);
         return;
       }
 
       setLoadingGuesses(true);
       try {
-        const path = 'palpites';
         const q = query(
-          collection(db, path),
+          collection(db, 'palpites'),
           where('rodada', '==', selectedClosedRound),
           orderBy('data_hora_envio', 'asc')
         );
         const snap = await getDocs(q);
-        const guesses: Palpite[] = [];
+        const list: Palpite[] = [];
         snap.forEach((doc) => {
-          guesses.push({ id: doc.id, ...doc.data() } as Palpite);
+          list.push({ id: doc.id, ...doc.data() } as Palpite);
         });
-        
-        // Dynamic re-verification
-        if (targetRoundObj && targetRoundObj.status === 'aberta' && targetRoundObj.id !== 'round-teste') {
-          setClosedRoundGuesses([]);
-        } else {
-          setClosedRoundGuesses(guesses);
-        }
+        setClosedRoundGuesses(list);
       } catch (err) {
-        console.error("Error fetching closed guesses.", err);
-        setClosedRoundGuesses([]);
+        console.error("Error loading closed guesses:", err);
       } finally {
         setLoadingGuesses(false);
       }
     }
+
     loadClosedGuesses();
   }, [selectedClosedRound, rounds]);
 
-  // Dynamically check and sync the participant's active round submissions, updating localStorage and submissionCount state
+  // Dynamically check and sync the participant's active round submissions
   useEffect(() => {
     if (!activeRound) {
       setSubmissionCount(0);
@@ -272,14 +267,12 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
         if (hasSub2) count = 2;
         else if (hasSub1) count = 1;
 
-        // Keep localStorage and state perfectly synchronized with database reality
         if (count > 0) {
           localStorage.setItem(storageKey, String(count));
         } else {
           localStorage.removeItem(storageKey);
         }
       } catch (err) {
-        console.warn("Could not check submissions in background, reading localStorage fallback:", err);
         const saved = localStorage.getItem(storageKey);
         count = saved ? parseInt(saved, 10) : 0;
       }
@@ -295,10 +288,39 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
     p.nome.toLowerCase() !== nome.toLowerCase()
   );
 
-  const handleLineChange = (index: number, field: 'palpite' | 'capitao', value: string) => {
-    const updated = [...guessLines];
-    updated[index][field] = value;
-    setGuessLines(updated);
+  const handleSelectSuggestion = (pNome: string) => {
+    setNome(pNome);
+    setConfirmacaoNome(pNome);
+    setShowSuggestions(false);
+    if (onSuggestName) onSuggestName(pNome);
+  };
+
+  const handleMatchChange = (index: number, field: keyof MatchGuessLine, value: string) => {
+    setMatchLines(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: value };
+      return updated;
+    });
+  };
+
+  const handleAddMatch = () => {
+    setMatchLines(prev => [
+      ...prev,
+      { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '', capitao: '' }
+    ]);
+  };
+
+  const handleRemoveMatch = (index: number) => {
+    if (matchLines.length <= 1) return;
+    setMatchLines(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleClearMatch = (index: number) => {
+    setMatchLines(prev => {
+      const updated = [...prev];
+      updated[index] = { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '', capitao: '' };
+      return updated;
+    });
   };
 
   const formatDateTime = (isoString: string) => {
@@ -330,14 +352,12 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
       return;
     }
 
-    // Double check deadline on client
     const nowISO = new Date().toISOString();
     if (nowISO >= activeRound.fechamento || activeRound.status === 'encerrada') {
       setStatusMsg({ type: 'error', text: 'Mercado encerrado. Aguarde a próxima rodada.' });
       return;
     }
 
-    // Match registered participant name
     const foundParticipant = participantes.find(p => p.nome.trim().toLowerCase() === nome.trim().toLowerCase());
     if (!foundParticipant) {
       setStatusMsg({
@@ -347,7 +367,6 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
       return;
     }
 
-    // Double validation: typed confirmation name must match exactly (case-insensitive & ignoring spaces)
     const normalizedSelected = nome.replace(/\s+/g, '').toLowerCase();
     const normalizedConfirm = confirmacaoNome.replace(/\s+/g, '').toLowerCase();
     
@@ -359,16 +378,35 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
       return;
     }
 
-    // Filter only filled lines
-    const filledLines = guessLines.filter(line => line.palpite.trim() !== '');
-    if (filledLines.length === 0) {
-      setStatusMsg({ type: 'error', text: 'Por favor, preencha pelo menos uma linha de palpite.' });
+    // Validate matches selected
+    const filledMatches: MatchGuessLine[] = [];
+    for (let i = 0; i < matchLines.length; i++) {
+      const line = matchLines[i];
+      const hasAny = Boolean(line.timeMandante || line.timeVisitante || line.golsMandante !== '' || line.golsVisitante !== '');
+      if (hasAny) {
+        if (!line.timeMandante || !line.timeVisitante) {
+          setStatusMsg({ type: 'error', text: `No Jogo ${i + 1}, selecione tanto o time mandante quanto o time visitante nas caixinhas.` });
+          return;
+        }
+        if (line.timeMandante === line.timeVisitante) {
+          setStatusMsg({ type: 'error', text: `No Jogo ${i + 1}, o time mandante (${line.timeMandante}) não pode jogar contra si mesmo.` });
+          return;
+        }
+        if (line.golsMandante === '' || line.golsVisitante === '') {
+          setStatusMsg({ type: 'error', text: `No Jogo ${i + 1} (${line.timeMandante} x ${line.timeVisitante}), selecione os placares de ambos os times nas caixinhas.` });
+          return;
+        }
+        filledMatches.push(line);
+      }
+    }
+
+    if (filledMatches.length === 0) {
+      setStatusMsg({ type: 'error', text: 'Por favor, selecione os times e placares de pelo menos um jogo usando as caixinhas.' });
       return;
     }
 
     setSubmitting(true);
     try {
-      // Find how many previous submissions this participant has done for this round
       const path = 'palpites';
       let hasSubmission2 = false;
       let hasSubmission1 = false;
@@ -383,16 +421,10 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
         const snap = await getDocs(q);
         snap.forEach(doc => {
           const d = doc.data();
-          if (d.envio_numero === 2) {
-            hasSubmission2 = true;
-          }
-          if (d.envio_numero === 1) {
-            hasSubmission1 = true;
-          }
+          if (d.envio_numero === 2) hasSubmission2 = true;
+          if (d.envio_numero === 1) hasSubmission1 = true;
         });
       } catch (queryErr) {
-        console.warn("Could not query previous submissions via Firestore. Falling back to localStorage.", queryErr);
-        // Fallback to localStorage check
         const savedCount = localStorage.getItem(storageKey);
         const count = savedCount ? parseInt(savedCount, 10) : 0;
         if (count >= 2) {
@@ -403,7 +435,6 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
         }
       }
 
-      // If they already submitted 2 times, block the 3rd submission
       if (hasSubmission2) {
         setStatusMsg({
           type: 'error',
@@ -416,19 +447,23 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
 
       const submissionNum = hasSubmission1 ? 2 : 1;
 
-      // Save each filled match line to Firestore
-      for (const line of filledLines) {
+      // Save each match to Firestore with both structured and string formats
+      for (const line of filledMatches) {
+        const palpiteText = `${line.timeMandante} ${line.golsMandante} x ${line.golsVisitante} ${line.timeVisitante}`;
         await addDoc(collection(db, path), {
           participante: foundParticipant.nome,
           rodada: activeRound.id,
-          palpite: line.palpite.trim(),
+          palpite: palpiteText,
+          time_mandante: line.timeMandante,
+          gols_mandante: parseInt(line.golsMandante, 10),
+          time_visitante: line.timeVisitante,
+          gols_visitante: parseInt(line.golsVisitante, 10),
           capitao: line.capitao.trim(),
           data_hora_envio: nowISO,
           envio_numero: submissionNum
         });
       }
 
-      // Update local storage count and state
       localStorage.setItem(storageKey, String(submissionNum));
       setSubmissionCount(submissionNum);
 
@@ -437,22 +472,22 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
 
       setStatusMsg({ 
         type: 'success', 
-        text: `Palpite registrado com sucesso. ${submissionNum === 2 ? 'Este é o seu 2º palpite (ele substituirá o 1º em caso de avaliação).' : 'Este é o seu 1º palpite.'}` 
+        text: `Palpites registrados com sucesso! ${submissionNum === 2 ? 'Este é o seu 2º envio (ele substituirá o 1º na apuração).' : 'Este é o seu 1º envio.'}` 
       });
 
       if (submissionNum === 1) {
-        addAuditLog(`Primeiro palpite de ${foundParticipant.nome} registrado com sucesso para a ${activeRound.nome} às ${hms} (${filledLines.length} jogo(s) palpitado(s)).`, 'SUCESSO');
+        addAuditLog(`Primeiro palpite de ${foundParticipant.nome} registrado para a ${activeRound.nome} às ${hms} (${filledMatches.length} jogos).`, 'SUCESSO');
       } else {
-        addAuditLog(`Palpite alterado por ${foundParticipant.nome} para a ${activeRound.nome} às ${hms} (2º envio de segurança que substituirá o anterior).`, 'INFO');
+        addAuditLog(`Palpite alterado por ${foundParticipant.nome} para a ${activeRound.nome} às ${hms} (2º envio de segurança que substitui o anterior).`, 'INFO');
       }
 
-      // Clear guess inputs
-      setGuessLines([
-        { palpite: '', capitao: '' },
-        { palpite: '', capitao: '' },
-        { palpite: '', capitao: '' },
-        { palpite: '', capitao: '' },
-        { palpite: '', capitao: '' }
+      // Reset match rows to clean defaults
+      setMatchLines([
+        { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '', capitao: '' },
+        { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '', capitao: '' },
+        { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '', capitao: '' },
+        { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '', capitao: '' },
+        { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '', capitao: '' }
       ]);
     } catch (err: any) {
       console.error(err);
@@ -463,7 +498,7 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
     }
   };
 
-  // Group guesses of closed round to show nicely in UI
+  // Group guesses of closed round
   const groupedGuesses: Record<string, Palpite[]> = closedRoundGuesses.reduce((acc, curr) => {
     if (!acc[curr.participante]) {
       acc[curr.participante] = [];
@@ -472,6 +507,8 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
     return acc;
   }, {} as Record<string, Palpite[]>);
 
+  const targetClosedRound = rounds.find(r => r.id === selectedClosedRound) || closedRounds[0];
+
   return (
     <div className="space-y-8">
       {/* Title block with green accent */}
@@ -479,22 +516,30 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
         <div>
           <h1 className="text-2xl font-black tracking-tight text-neutral-800 uppercase flex items-center gap-2">
             <span className="w-2.5 h-6 bg-[#009739] block rounded-sm"></span>
-            Enviar Palpite - {activeRound ? activeRound.nome : 'Sem Rodada'}
+            {activeRound ? `Enviar Palpite - ${activeRound.nome}` : 'Mercado Fechado - Aguardando Resultados'}
           </h1>
           <p className="text-xs text-neutral-400 mt-1 uppercase tracking-widest font-bold">
-            Sigilo absoluto garantido do fechamento do mercado
+            Seleção direta dos 36 times e placares por caixinhas • Fechamento sempre na terça-feira às 13:00
           </p>
         </div>
 
-        {/* Status indicator style from design HTML */}
+        {/* Status indicator */}
         {activeRound ? (
-          <div className="bg-[#dcfce7] border border-emerald-250 text-[#166534] px-4 py-1.5 rounded-full text-xs font-bold flex items-center gap-2 tracking-wide uppercase shrink-0">
-            <span>MERCADO ABERTO</span>
-            <span className="animate-pulse h-2 w-2 bg-green-600 rounded-full"></span>
+          <div className="flex items-center gap-2">
+            {(activeRound.is_test || activeRound.id === 'rodada-teste') && (
+              <span className="bg-purple-100 border border-purple-300 text-purple-800 px-3 py-1 rounded-full text-xs font-black uppercase flex items-center gap-1.5 animate-pulse">
+                🧪 MODO TESTE ATIVO
+              </span>
+            )}
+            <div className="bg-[#dcfce7] border border-emerald-250 text-[#166534] px-4 py-1.5 rounded-full text-xs font-bold flex items-center gap-2 tracking-wide uppercase shrink-0">
+              <span>MERCADO ABERTO</span>
+              <span className="animate-pulse h-2 w-2 bg-green-600 rounded-full"></span>
+            </div>
           </div>
         ) : (
           <div className="bg-[#fee2e2] border border-rose-250 text-[#991b1b] px-4 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 tracking-wide uppercase shrink-0">
-            <span>MERCADO ENCERRADO</span>
+            <Lock className="w-3.5 h-3.5" />
+            <span>MERCADO ENCERRADO (TERÇA 13H)</span>
           </div>
         )}
       </div>
@@ -508,10 +553,13 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
             </div>
             <div>
               <h3 className="font-extrabold text-sm uppercase tracking-wide flex items-center gap-1.5 text-neutral-800">
-                O Mercado se encerra em:
+                {(activeRound.is_test || activeRound.id === 'rodada-teste') ? 'Rodada de Teste Ativa (Controle Manual do Administrador):' : 'O Mercado se encerra em:'}
               </h3>
               <p className="text-[10.5px] text-neutral-500 font-bold uppercase tracking-wider font-mono mt-0.5">
-                Fechamento oficial: {formatDateTime(activeRound.fechamento)}
+                {(activeRound.is_test || activeRound.id === 'rodada-teste')
+                  ? 'O mercado pode ser aberto e fechado a qualquer momento na Administração'
+                  : `Fechamento oficial: ${formatDateTimeDisplay(activeRound.fechamento)} (Terça-feira às 13:00)`
+                }
               </p>
             </div>
           </div>
@@ -534,77 +582,119 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
         </div>
       )}
 
+      {/* When Market is Closed: Informative Banner */}
+      {!activeRound && (
+        <div className="bg-neutral-900 text-white rounded-2xl p-6 sm:p-8 flex flex-col md:flex-row items-center justify-between gap-6 shadow-xs">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 bg-rose-500/20 border border-rose-500/30 rounded-2xl flex items-center justify-center shrink-0">
+              <Lock className="w-7 h-7 text-rose-400" />
+            </div>
+            <div>
+              <span className="text-rose-400 text-xs font-black tracking-widest uppercase block">
+                RODADA FINALIZADA • MERCADO FECHADO
+              </span>
+              <h2 className="text-xl sm:text-2xl font-black font-display tracking-tight uppercase mt-0.5">
+                Aguardando Atualização dos Placares
+              </h2>
+              <p className="text-xs text-neutral-300 font-medium mt-1.5 max-w-2xl leading-relaxed">
+                O mercado foi fechado na <strong className="text-amber-400">terça-feira às 13:00</strong>. Somente quando o mercado fecha é que a rodada é considerada finalizada. O mercado da próxima rodada abrirá automaticamente assim que o administrador lançar e atualizar os placares oficiais dos jogos!
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Main dashboard body with 2 columns */}
       <div className="flex flex-col lg:flex-row gap-6">
         {/* Left main form section - 2/3 width */}
         <section className="flex-1 lg:w-2/3 bg-white border border-neutral-200 rounded-2xl shadow-xs p-6 flex flex-col">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-bold text-neutral-400 uppercase tracking-wider">Nome do Participante</label>
-              <div className="relative">
-                <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-neutral-400">
-                  <User className="w-4 h-4" />
-                </span>
-                <input
-                  id="participante-nome"
-                  type="text"
-                  autoComplete="off"
-                  placeholder="Selecione seu nome..."
-                  value={nome}
-                  onChange={(e) => {
-                    setNome(e.target.value);
-                    setShowSuggestions(true);
-                    if (statusMsg) setStatusMsg(null);
-                  }}
-                  onFocus={() => setShowSuggestions(true)}
-                  onBlur={() => setTimeout(() => setShowSuggestions(false), 250)}
-                  className="w-full pl-10 pr-4 py-3 bg-neutral-50 border border-neutral-200 rounded-lg text-sm placeholder:text-neutral-400 focus:outline-hidden focus:ring-2 focus:ring-[#009739]/50 focus:bg-white transition-all text-neutral-800 font-bold"
-                />
+          <div className="border-b border-neutral-100 pb-4 mb-5">
+            <h2 className="text-lg font-black text-neutral-800 uppercase tracking-tight flex items-center gap-2">
+              <span className="w-2 h-4 bg-[#009739] block rounded-xs"></span>
+              {activeRound ? 'Formulário de Palpites' : 'Status do Mercado'}
+            </h2>
+            <p className="text-neutral-400 text-xs mt-0.5 uppercase tracking-wider font-bold">
+              {activeRound 
+                ? 'Selecione os times nas caixinhas e clique para escolher os placares (0 a 15).' 
+                : 'O mercado está fechado no momento. Veja a tabela de quem palpitou abaixo.'}
+            </p>
+          </div>
 
-                {/* Suggestions Dropdown positioned relative to the wrapper */}
-                {showSuggestions && suggestions.length > 0 && (
-                  <div className="absolute z-30 w-full mt-1 bg-white border border-neutral-200 rounded-lg shadow-md max-h-48 overflow-y-auto left-0 top-full">
-                    {suggestions.map((p) => (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => {
-                          setNome(p.nome);
-                          setShowSuggestions(false);
-                          addAuditLog(`Vínculo de participante ativo selecionado: ${p.nome}`, 'INFO');
-                        }}
-                        className="w-full text-left px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50 transition-colors border-b border-neutral-50 last:border-0 font-semibold"
-                      >
-                        {p.nome} <span className="text-xs text-neutral-400 font-mono">({p.pontos} Pts)</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
+          {!activeRound ? (
+            <div className="py-6 space-y-4">
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs font-medium flex items-center gap-2.5">
+                <AlertCircle className="w-5 h-5 text-amber-600 shrink-0" />
+                <span>
+                  O envio de palpites está bloqueado. O mercado abrirá automaticamente quando os placares forem atualizados.
+                </span>
               </div>
+              {targetClosedRound && (
+                <div className="pt-2">
+                  <TabelaParticipacao
+                    round={targetClosedRound}
+                    participantes={participantes}
+                    palpites={closedRoundGuesses}
+                    isMarketClosed={true}
+                  />
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
+
+          {/* Participant Identification Fields */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            <div className="relative">
+              <label htmlFor="input-nome-participante" className="block text-xs font-black uppercase tracking-wider text-neutral-700 mb-1">
+                Nome do Participante *
+              </label>
+              <input
+                id="input-nome-participante"
+                type="text"
+                placeholder="Selecione ou digite seu nome..."
+                value={nome}
+                onChange={(e) => {
+                  setNome(e.target.value);
+                  setShowSuggestions(true);
+                }}
+                onFocus={() => setShowSuggestions(true)}
+                className="w-full border border-neutral-200 p-3 rounded-lg text-sm bg-neutral-50/50 focus:bg-white focus:outline-hidden focus:ring-1 focus:ring-[#009739] font-bold text-neutral-800 placeholder:text-neutral-400"
+              />
+
+              {showSuggestions && suggestions.length > 0 && (
+                <ul className="absolute z-50 left-0 right-0 mt-1 bg-white border border-neutral-200 rounded-lg shadow-lg max-h-48 overflow-y-auto divide-y divide-neutral-100 text-sm">
+                  {suggestions.map((p) => (
+                    <li
+                      key={p.id}
+                      onClick={() => handleSelectSuggestion(p.nome)}
+                      className="p-3 hover:bg-neutral-50 cursor-pointer flex justify-between items-center transition-colors font-bold text-neutral-700"
+                    >
+                      <span>{p.nome}</span>
+                      <span className="text-[10px] bg-green-50 text-green-700 font-mono px-2 py-0.5 rounded-full border border-green-200">
+                        {p.pontos} Pts
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
 
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-bold text-neutral-400 uppercase tracking-wider">Confirme seu Nome (Digite exatamente igual)</label>
-              <div className="relative">
-                <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-neutral-400">
-                  <CheckCircle className="w-4 h-4 text-emerald-500" />
-                </span>
-                <input
-                  id="participante-nome-confirmacao"
-                  type="text"
-                  autoComplete="off"
-                  placeholder="Digite seu nome novamente..."
-                  value={confirmacaoNome}
-                  onChange={(e) => {
-                    setConfirmacaoNome(e.target.value);
-                    if (statusMsg) setStatusMsg(null);
-                  }}
-                  className="w-full pl-10 pr-4 py-3 bg-neutral-50 border border-neutral-200 rounded-lg text-sm placeholder:text-neutral-400 focus:outline-hidden focus:ring-2 focus:ring-[#009739]/50 focus:bg-white transition-all text-neutral-800 font-bold"
-                />
-              </div>
+            <div>
+              <label htmlFor="input-confirmacao-nome" className="block text-xs font-black uppercase tracking-wider text-neutral-700 mb-1">
+                Confirmar Nome *
+              </label>
+              <input
+                id="input-confirmacao-nome"
+                type="text"
+                placeholder="Digite seu nome novamente..."
+                value={confirmacaoNome}
+                onChange={(e) => setConfirmacaoNome(e.target.value)}
+                className="w-full border border-neutral-200 p-3 rounded-lg text-sm bg-neutral-50/50 focus:bg-white focus:outline-hidden focus:ring-1 focus:ring-[#009739] font-bold text-neutral-800 placeholder:text-neutral-400"
+              />
             </div>
           </div>
 
+          {/* Submission status banner */}
           {submissionCount > 0 && (
             <div className={`p-4 mb-5 border rounded-xl text-xs flex items-start gap-3 transition-all ${
               submissionCount === 1 
@@ -621,8 +711,8 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
                 </p>
                 <p className="opacity-90 leading-relaxed">
                   {submissionCount === 1 
-                    ? 'Você já registrou 1 palpite para esta rodada. Se desejar alterá-lo, preencha os novos palpites abaixo e envie. Este será o seu 2º palpite de segurança, que substituirá o anterior.' 
-                    : 'Você já enviou os 2 palpites permitidos para esta rodada. Suas escolhas estão salvas e consolidadas. O último envio é o que está valendo para a avaliação.'
+                    ? 'Você já registrou 1 palpite para esta rodada. Se desejar alterá-lo, escolha os novos placares abaixo e envie. Este será o seu 2º envio, que substituirá o anterior.' 
+                    : 'Você já enviou os 2 palpites permitidos para esta rodada. Suas escolhas estão consolidadas. O último envio é o que está valendo para a avaliação.'
                   }
                 </p>
               </div>
@@ -630,37 +720,172 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
           )}
 
           <form onSubmit={handleFormSubmit} className="space-y-4 flex flex-col flex-1">
-            <div className="grid grid-cols-12 gap-2 text-[10px] font-bold text-neutral-400 uppercase tracking-widest px-1">
-              <div className="col-span-8">Palpite (Ex: Brasil 2x1 Argentina)</div>
-              <div className="col-span-4">Nome do Jogador / Capitão</div>
+            <div className="flex items-center justify-between px-1">
+              <span className="text-[11px] font-black uppercase tracking-wider text-neutral-500">
+                Jogos da Rodada (Selecione os times e placares nas caixinhas)
+              </span>
+              <button
+                type="button"
+                onClick={handleAddMatch}
+                className="text-xs font-bold text-[#009739] hover:text-[#007a2e] flex items-center gap-1 cursor-pointer transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" /> Adicionar Jogo
+              </button>
             </div>
 
+            {/* Match Rows */}
             <div className="space-y-3">
-              {guessLines.map((line, index) => (
-                <div key={index} className="grid grid-cols-12 gap-2">
-                  <input
-                    type="text"
-                    placeholder={`Jogo ${index + 1}`}
-                    value={line.palpite}
-                    onChange={(e) => handleLineChange(index, 'palpite', e.target.value)}
-                    disabled={!activeRound}
-                    className="col-span-8 border border-neutral-200 p-3 rounded-lg text-sm bg-neutral-50/50 focus:bg-white focus:outline-hidden focus:ring-1 focus:ring-[#009739] placeholder:text-neutral-400 font-semibold text-neutral-800"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Capitão"
-                    value={line.capitao}
-                    onChange={(e) => handleLineChange(index, 'capitao', e.target.value)}
-                    disabled={!activeRound}
-                    className="col-span-4 border border-neutral-200 p-3 rounded-lg text-sm bg-neutral-50/50 focus:bg-white focus:outline-hidden focus:ring-1 focus:ring-[#009739] placeholder:text-neutral-400 font-semibold text-neutral-800"
-                  />
-                </div>
-              ))}
+              {matchLines.map((line, index) => {
+                const isConfigured = Boolean(line.timeMandante && line.timeVisitante && line.golsMandante !== '' && line.golsVisitante !== '');
+                return (
+                  <div 
+                    key={index} 
+                    className={`p-3.5 rounded-xl border transition-all ${
+                      isConfigured 
+                        ? 'bg-white border-[#009739]/30 shadow-xs' 
+                        : 'bg-neutral-50/40 border-neutral-200'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-neutral-100 text-neutral-600 font-mono">
+                          Jogo {index + 1}
+                        </span>
+                        {isConfigured && (
+                          <span className="text-[11px] font-extrabold text-[#009739]">
+                            {line.timeMandante} {line.golsMandante} x {line.golsVisitante} {line.timeVisitante}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleClearMatch(index)}
+                          className="p-1 text-neutral-400 hover:text-neutral-600 rounded transition-colors"
+                          title="Limpar jogo"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                        </button>
+                        {matchLines.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveMatch(index)}
+                            className="p-1 text-neutral-400 hover:text-rose-500 rounded transition-colors"
+                            title="Remover linha"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Boxes Grid */}
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
+                      {/* Box 1: Home Team Selector */}
+                      <div className="sm:col-span-4">
+                        <label className="block text-[9px] font-black uppercase tracking-wider text-neutral-400 mb-0.5">
+                          Time Mandante
+                        </label>
+                        <select
+                          value={line.timeMandante}
+                          onChange={(e) => handleMatchChange(index, 'timeMandante', e.target.value)}
+                          disabled={!activeRound}
+                          className="w-full p-2.5 bg-white border border-neutral-300 rounded-lg text-xs font-bold text-neutral-800 focus:outline-hidden focus:ring-2 focus:ring-[#009739] cursor-pointer"
+                        >
+                          <option value="">-- Escolha o Time --</option>
+                          {TEAMS_LIST.map((team) => (
+                            <option key={team} value={team} disabled={team === line.timeVisitante}>
+                              {team}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Box 2: Home Score */}
+                      <div className="sm:col-span-2">
+                        <label className="block text-[9px] font-black uppercase tracking-wider text-neutral-400 mb-0.5 text-center">
+                          Gols
+                        </label>
+                        <select
+                          value={line.golsMandante}
+                          onChange={(e) => handleMatchChange(index, 'golsMandante', e.target.value)}
+                          disabled={!activeRound}
+                          className="w-full p-2.5 bg-white border border-neutral-300 rounded-lg text-xs font-black text-center text-neutral-800 focus:outline-hidden focus:ring-2 focus:ring-[#009739] cursor-pointer font-mono"
+                        >
+                          <option value="">-</option>
+                          {SCORE_OPTIONS.map((score) => (
+                            <option key={score} value={score}>{score}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Middle X */}
+                      <div className="hidden sm:flex sm:col-span-1 justify-center items-center font-black text-neutral-300 text-xs pt-3">
+                        x
+                      </div>
+
+                      {/* Box 3: Away Score */}
+                      <div className="sm:col-span-2">
+                        <label className="block text-[9px] font-black uppercase tracking-wider text-neutral-400 mb-0.5 text-center">
+                          Gols
+                        </label>
+                        <select
+                          value={line.golsVisitante}
+                          onChange={(e) => handleMatchChange(index, 'golsVisitante', e.target.value)}
+                          disabled={!activeRound}
+                          className="w-full p-2.5 bg-white border border-neutral-300 rounded-lg text-xs font-black text-center text-neutral-800 focus:outline-hidden focus:ring-2 focus:ring-[#009739] cursor-pointer font-mono"
+                        >
+                          <option value="">-</option>
+                          {SCORE_OPTIONS.map((score) => (
+                            <option key={score} value={score}>{score}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Box 4: Away Team Selector */}
+                      <div className="sm:col-span-3">
+                        <label className="block text-[9px] font-black uppercase tracking-wider text-neutral-400 mb-0.5">
+                          Time Visitante
+                        </label>
+                        <select
+                          value={line.timeVisitante}
+                          onChange={(e) => handleMatchChange(index, 'timeVisitante', e.target.value)}
+                          disabled={!activeRound}
+                          className="w-full p-2.5 bg-white border border-neutral-300 rounded-lg text-xs font-bold text-neutral-800 focus:outline-hidden focus:ring-2 focus:ring-[#009739] cursor-pointer"
+                        >
+                          <option value="">-- Escolha o Time --</option>
+                          {TEAMS_LIST.map((team) => (
+                            <option key={team} value={team} disabled={team === line.timeMandante}>
+                              {team}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Captain input line */}
+                    <div className="mt-2.5 pt-2 border-t border-neutral-100 flex items-center gap-2">
+                      <label className="text-[10px] font-bold text-neutral-500 shrink-0">
+                        Capitão / Artilheiro do Jogo:
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Ex: Haaland, Saka, Mbappé... (Opcional: +1 pt por gol)"
+                        value={line.capitao}
+                        onChange={(e) => handleMatchChange(index, 'capitao', e.target.value)}
+                        disabled={!activeRound}
+                        className="w-full px-2.5 py-1 text-xs border border-neutral-200 rounded-md bg-white focus:outline-hidden focus:ring-1 focus:ring-[#009739] font-medium text-neutral-700 placeholder:text-neutral-350"
+                      />
+                    </div>
+                  </div>
+                );
+              })}
             </div>
 
             {/* Feedback messages */}
             {statusMsg && (
-              <div className={`p-4 rounded-lg flex items-start gap-3 border text-sm ${
+              <div className={`p-4 rounded-xl flex items-start gap-3 border text-sm ${
                 statusMsg.type === 'success' 
                   ? 'bg-emerald-50 border-emerald-100 text-emerald-800' 
                   : 'bg-rose-50 border-rose-100 text-rose-800'
@@ -674,22 +899,24 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
               </div>
             )}
 
-            <div className="pt-2 mt-auto">
+            <div className="pt-3 mt-auto">
               <button
                 type="submit"
                 disabled={submitting || !activeRound}
-                className="w-full py-4 text-white bg-[#009739] hover:bg-[#007a2e] active:bg-[#005a20] rounded-xl font-bold text-lg cursor-pointer transition-colors flex items-center justify-center gap-2 shadow-sm disabled:bg-neutral-250 disabled:text-neutral-400 disabled:cursor-not-allowed uppercase tracking-wider"
+                className="w-full py-4 text-white bg-[#009739] hover:bg-[#007a2e] active:bg-[#005a20] rounded-xl font-black text-lg cursor-pointer transition-all flex items-center justify-center gap-2 shadow-sm disabled:bg-neutral-250 disabled:text-neutral-400 disabled:cursor-not-allowed uppercase tracking-wider"
               >
-                {submitting ? 'Registrando...' : 'ENVIAR PALPITE'}
+                {submitting ? 'Gravando Palpites...' : 'ENVIAR PALPITE OFICIAL'}
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
                 </svg>
               </button>
               <p className="text-neutral-400 text-[10px] mt-2 font-mono text-center">
-                ★ Você pode substituir enviando uma 2ª vez. Apenas o último envio oficial será computado.
+                ★ Você pode substituir enviando uma 2ª vez. Apenas o último envio oficial será computado pela apuração.
               </p>
             </div>
           </form>
+          </>
+          )}
         </section>
 
         {/* Right side widgets column - 1/3 width */}
@@ -719,64 +946,65 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
                           : 'bg-neutral-50/50 border-neutral-200 text-neutral-800 text-sm'
                       }`}
                     >
-                      <div className="flex items-center gap-3">
-                        <span className={`font-black ${isFirst ? 'text-[#009739]' : 'text-neutral-400'}`}>
-                          {place}º
+                      <div className="flex items-center gap-2.5">
+                        <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${
+                          isFirst ? 'bg-amber-100 text-amber-800' : 'bg-neutral-200 text-neutral-600'
+                        }`}>
+                          {place}
                         </span>
-                        <span className="font-bold">{p.nome}</span>
+                        <span className="font-bold text-xs truncate max-w-[120px]">{p.nome}</span>
                       </div>
-                      <span className="font-black">{p.pontos} Pts</span>
+                      <span className="font-mono font-black text-xs">{p.pontos} Pts</span>
                     </div>
                   );
                 })}
               {participantes.length === 0 && (
-                <div className="text-center text-xs text-neutral-400 py-8">Nenhum participante cadastrado</div>
+                <div className="text-center text-xs text-neutral-400 py-4">Nenhum participante registrado.</div>
               )}
-            </div>
-
-            <div className="mt-4 pt-4 border-t border-neutral-155 flex justify-between text-[11px] text-neutral-400 font-bold uppercase tracking-wider">
-              <div className="flex flex-col">
-                <span>Participantes</span>
-                <span className="text-neutral-800 text-sm">{participantes.length}</span>
-              </div>
-              <div className="flex flex-col text-right">
-                <span>Líder Atual</span>
-                <span className="text-[#009739] text-sm italic">
-                  {participantes.length > 0 ? [...participantes].sort((a,b) => b.pontos - a.pontos)[0].nome : '—'}
-                </span>
-              </div>
             </div>
           </div>
 
-          {/* Secure Badge */}
-          <div className="bg-neutral-900 border border-neutral-950 rounded-2xl p-5 text-white shadow-md flex flex-col gap-3">
-            <div className="flex items-center gap-2">
-              <svg className="w-5 h-5 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-              </svg>
-              <span className="font-bold text-xs uppercase tracking-wider">Sigilo Absoluto Garantido</span>
-            </div>
-            <p className="text-[11px] text-neutral-350 leading-relaxed font-semibold">
-              Nenhum participante ou administrador pode ver os palpites de outros antes do horário de encerramento do mercado da rodada.
-            </p>
-            {activeRound && (
-              <div className="mt-1 bg-neutral-800 p-2.5 rounded text-[10px] font-mono text-neutral-200 border-l-2 border-yellow-500 font-bold">
-                PROX. FECHAMENTO: {formatDateTime(activeRound.fechamento).toUpperCase()}
+          {/* Scoring Rules Widget */}
+          <div className="bg-white border border-neutral-200 rounded-2xl p-6 shadow-xs flex flex-col">
+            <h3 className="font-black text-neutral-800 uppercase tracking-tight text-xs mb-3 flex items-center gap-2">
+              <Award className="w-4 h-4 text-[#009739]" />
+              Regras Oficiais de Pontuação
+            </h3>
+
+            <div className="space-y-2 text-xs text-neutral-600">
+              <div className="p-2.5 rounded-lg bg-neutral-50 border border-neutral-150 flex items-center justify-between">
+                <span className="font-semibold">Acertar Resultado (Vencedor/Empate)</span>
+                <span className="font-mono font-black text-[#009739] text-xs">+3 Pts</span>
               </div>
-            )}
+              <div className="p-2.5 rounded-lg bg-neutral-50 border border-neutral-150 flex items-center justify-between">
+                <span className="font-semibold">Acertar Placar Exato</span>
+                <span className="font-mono font-black text-[#009739] text-xs">+2 Pts</span>
+              </div>
+              <div className="p-2.5 rounded-lg bg-emerald-50/60 border border-emerald-150 flex items-center justify-between">
+                <span className="font-semibold">Placar Exato Completo (Resultado + Placar)</span>
+                <span className="font-mono font-black text-[#009739] text-xs">5 Pts</span>
+              </div>
+              <div className="p-2.5 rounded-lg bg-neutral-50 border border-neutral-150 flex items-center justify-between">
+                <span className="font-semibold">Placar 0x0 sem Capitão</span>
+                <span className="font-mono font-black text-amber-700 text-xs">6 Pts</span>
+              </div>
+              <div className="p-2.5 rounded-lg bg-neutral-50 border border-neutral-150 flex items-center justify-between">
+                <span className="font-semibold">Placar 0x0 com Capitão</span>
+                <span className="font-mono font-black text-amber-700 text-xs">5 Pts</span>
+              </div>
+              <div className="p-2.5 rounded-lg bg-neutral-50 border border-neutral-150 flex items-center justify-between">
+                <span className="font-semibold">Gol do Capitão Indicado</span>
+                <span className="font-mono font-black text-[#009739] text-xs">+1 Pt / gol</span>
+              </div>
+            </div>
           </div>
 
           {/* Audit Logs Widget */}
-          <div className="bg-white border border-neutral-200 rounded-2xl p-5 shadow-xs flex flex-col">
-            <div className="flex items-center justify-between border-b border-neutral-100 pb-3 mb-3">
-              <h3 className="font-black text-neutral-800 uppercase tracking-tight text-xs flex items-center gap-2">
-                <FileText className="w-4 h-4 text-neutral-600" />
-                Auditoria de Updates Locais
-              </h3>
-              <span className="text-[9px] font-mono font-bold bg-neutral-100 px-1.5 py-0.5 text-neutral-500 rounded border border-neutral-200">
-                CLIENT-LOG
-              </span>
-            </div>
+          <div className="bg-white border border-neutral-200 rounded-2xl p-6 shadow-xs flex flex-col">
+            <h3 className="font-black text-neutral-800 uppercase tracking-tight text-xs mb-3 flex items-center gap-2">
+              <Clock className="w-4 h-4 text-neutral-400" />
+              Auditoria de Transações
+            </h3>
 
             <div className="space-y-2.5 max-h-[224px] overflow-y-auto pr-1">
               {auditLogs.map((log) => {
@@ -807,123 +1035,14 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
                 <div className="text-center text-xs text-neutral-400 py-6">Nenhum evento registrado.</div>
               )}
             </div>
-
-            <p className="text-[9px] text-neutral-400 font-bold uppercase tracking-wider text-center mt-3 pt-2.5 border-t border-neutral-100">
-              Registros dinâmicos gerados pela sessão atual
-            </p>
           </div>
         </aside>
       </div>
 
-      {/* Closed Rounds Results Section */}
-      {closedRounds.length > 0 && (
-        <div className="space-y-6 pt-6 border-t border-neutral-200">
-          <div className="pb-2">
-            <h2 className="text-xl font-bold text-neutral-800 uppercase tracking-tight flex items-center gap-2">
-              <span className="w-2.5 h-5 bg-neutral-800 block rounded-xs"></span>
-              Histórico de Palpites Revelados
-            </h2>
-            <p className="text-neutral-400 text-xs mt-1 uppercase tracking-wider font-bold">
-              Todos os palpites tornam-se públicos apenas após o fechamento do mercado.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-3 max-w-sm">
-            <label htmlFor="closed-round-selector" className="text-xs font-bold text-neutral-500 uppercase tracking-wider shrink-0">Buscar Rodada:</label>
-            <select
-              id="closed-round-selector"
-              value={selectedClosedRound}
-              onChange={(e) => setSelectedClosedRound(e.target.value)}
-              className="w-full px-3 py-1.5 bg-white border border-neutral-200 rounded-lg text-xs font-bold text-neutral-800 focus:outline-hidden focus:ring-1 focus:ring-[#009739]"
-            >
-              {closedRounds.map(r => {
-                const nowStr = new Date().toISOString();
-                const isClosed = r.status === 'encerrada' || r.fechamento <= nowStr;
-                return (
-                  <option key={r.id} value={r.id}>
-                    {r.nome} {isClosed ? '(Mercado Fechado)' : '(Rodada de Teste - Aberta)'}
-                  </option>
-                );
-              })}
-            </select>
-          </div>
-
-          {loadingGuesses ? (
-            <div className="py-12 text-center text-sm text-neutral-400 font-mono font-semibold animate-pulse">
-              Buscando palpites de forma segura no banco de dados...
-            </div>
-          ) : Object.keys(groupedGuesses).length === 0 ? (
-            <p className="p-8 text-center text-sm text-neutral-400 bg-white border border-dashed border-neutral-200 rounded-xl">
-              Nenhum palpite enviado nesta rodada ou mercado ainda em andamento.
-            </p>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {Object.entries(groupedGuesses).map(([participantName, guesses]) => {
-                const sorted = [...guesses].sort((a,b) => new Date(a.data_hora_envio).getTime() - new Date(b.data_hora_envio).getTime());
-                const uploadBatches = Array.from(new Set(sorted.map(g => g.data_hora_envio)));
-                
-                return (
-                  <div key={participantName} className="bg-white rounded-2xl border border-neutral-200 p-5 shadow-xs relative overflow-hidden flex flex-col">
-                    <div className="flex items-center justify-between border-b border-neutral-100 pb-3 mb-4">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-neutral-105 text-neutral-600 text-sm font-black flex items-center justify-center font-display uppercase">
-                          {participantName[0]}
-                        </div>
-                        <h4 className="font-bold text-[#009739] text-sm uppercase tracking-wide">{participantName}</h4>
-                      </div>
-                    </div>
-
-                    <div className="space-y-4 flex-1">
-                      {uploadBatches.map((timestamp, batchIdx) => {
-                        const batchGuesses = sorted.filter(g => g.data_hora_envio === timestamp);
-                        const isLatest = batchIdx === uploadBatches.length - 1;
-                        
-                        return (
-                          <div 
-                            key={timestamp} 
-                            className={`p-3 rounded-lg border text-sm transition-all ${
-                              isLatest 
-                                ? 'bg-green-50/30 border-green-100 ring-1 ring-green-100' 
-                                : 'bg-neutral-50/50 border-neutral-100 opacity-50'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="text-[10px] font-mono text-neutral-400 font-bold uppercase">
-                                {batchIdx + 1}º Envio ({formatDateTime(timestamp)})
-                              </span>
-                              {isLatest ? (
-                                <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-sm bg-[#dcfce7] text-[#166534] text-[9px] font-bold uppercase tracking-wider font-mono">
-                                  <Star className="w-2.5 h-2.5 fill-green-600 text-green-600 shrink-0" />
-                                  Valendo
-                                </span>
-                              ) : (
-                                <span className="text-[9px] font-bold text-neutral-400 uppercase font-mono tracking-wider">
-                                  Substituído
-                                </span>
-                              )}
-                            </div>
-
-                            <ul className="space-y-2">
-                              {batchGuesses.map((guess, idx) => (
-                                <li key={guess.id} className="text-xs flex items-start justify-between border-b border-dashed border-neutral-100 last:border-0 pb-1.5 last:pb-0">
-                                  <div>
-                                    <span className="font-bold text-neutral-800 block">{idx + 1}. {guess.palpite}</span>
-                                    <div className="text-[10px] text-neutral-400 uppercase font-bold tracking-wider mt-0.5">Capitão: <span className="text-neutral-600 font-mono bg-neutral-100 px-1 py-0.5 rounded-xs">{guess.capitao || 'Sem capitão'}</span></div>
-                                  </div>
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
+      {/* Histórico de Rodadas Anteriores & Pontuações Detalhadas */}
+      <div className="pt-8 border-t-2 border-neutral-200">
+        <HistoricoRodadas initialRoundId={selectedClosedRound || (closedRounds.length > 0 ? closedRounds[0].id : undefined)} />
+      </div>
     </div>
   );
 }

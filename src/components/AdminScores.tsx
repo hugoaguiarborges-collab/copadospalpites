@@ -12,7 +12,8 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Participante, PontuacaoLog } from '../types';
-import { ChevronUp, ChevronDown, RefreshCw, Star, ShieldAlert, History } from 'lucide-react';
+import { resetTournamentToNewChampionship } from '../utils/tournamentReset';
+import { ChevronUp, ChevronDown, RefreshCw, Star, ShieldAlert, History, AlertTriangle } from 'lucide-react';
 
 export default function AdminScores() {
   const [participants, setParticipants] = useState<Participante[]>([]);
@@ -28,23 +29,25 @@ export default function AdminScores() {
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [resettingTournament, setResettingTournament] = useState(false);
+
+  // Read list of participants
+  const loadParticipants = async () => {
+    try {
+      const pSnap = await getDocs(collection(db, 'participantes'));
+      const pList: Participante[] = [];
+      pSnap.forEach((docObj) => {
+        pList.push({ id: docObj.id, ...docObj.data() } as Participante);
+      });
+      pList.sort((a,b) => a.nome.localeCompare(b.nome));
+      setParticipants(pList);
+      if (pList.length > 0 && !selectedP) setSelectedP(pList[0].id);
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   useEffect(() => {
-    // Read list of participants
-    async function loadParticipants() {
-      try {
-        const pSnap = await getDocs(collection(db, 'participantes'));
-        const pList: Participante[] = [];
-        pSnap.forEach((doc) => {
-          pList.push({ id: doc.id, ...doc.data() } as Participante);
-        });
-        pList.sort((a,b) => a.nome.localeCompare(b.nome));
-        setParticipants(pList);
-        if (pList.length > 0) setSelectedP(pList[0].id);
-      } catch (err) {
-        console.error(err);
-      }
-    }
     loadParticipants();
 
     // Set up real-time listener for logs list
@@ -54,8 +57,8 @@ export default function AdminScores() {
     );
     const unsubscribe = onSnapshot(qLogs, (snap) => {
       const logs: PontuacaoLog[] = [];
-      snap.forEach((doc) => {
-        logs.push({ id: doc.id, ...doc.data() } as PontuacaoLog);
+      snap.forEach((docObj) => {
+        logs.push({ id: docObj.id, ...docObj.data() } as PontuacaoLog);
       });
       setHistory(logs);
       setLoading(false);
@@ -110,19 +113,33 @@ export default function AdminScores() {
       setPointsAmount(0);
       setMotivo('');
       
-      // reload participants to get latest points count locally
-      const pSnapUpdated = await getDocs(collection(db, 'participantes'));
-      const pListUpdated: Participante[] = [];
-      pSnapUpdated.forEach((doc) => {
-        pListUpdated.push({ id: doc.id, ...doc.data() } as Participante);
-      });
-      pListUpdated.sort((a,b) => a.nome.localeCompare(b.nome));
-      setParticipants(pListUpdated);
+      await loadParticipants();
     } catch (err) {
       console.error(err);
       setErrorMsg('Erro ao ajustar a pontuação no banco de dados.');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleResetAllScores = async () => {
+    const confirmed = window.confirm(
+      '⚠️ ATENÇÃO: Deseja realmente zerar todas as pontuações e iniciar um novo campeonato oficial a partir de hoje?\n\n- Todas as pontuações de todos os participantes serão zeradas (0 pts).\n- Serão configuradas as 50 rodadas oficiais com fechamento às terças-feiras às 13:00.\n- O mercado abre automaticamente quando a atualização de resultados for feita.\n- Os palpites e logs anteriores serão limpos.'
+    );
+    if (!confirmed) return;
+
+    setResettingTournament(true);
+    setErrorMsg('');
+    setSuccessMsg('');
+    try {
+      await resetTournamentToNewChampionship();
+      await loadParticipants();
+      setSuccessMsg('Todas as pontuações foram zeradas com sucesso e o Novo Campeonato foi iniciado!');
+    } catch (err: any) {
+      console.error("Error resetting tournament:", err);
+      setErrorMsg(`Erro ao zerar pontuações: ${err?.message || err}`);
+    } finally {
+      setResettingTournament(false);
     }
   };
 
@@ -138,9 +155,27 @@ export default function AdminScores() {
 
   return (
     <div className="space-y-8">
-      <div className="border-b border-neutral-100 pb-3">
-        <h3 className="text-lg font-semibold font-display text-neutral-800">Gerenciar Pontuação</h3>
-        <p className="text-xs text-neutral-400">Adicione ou remova pontos manualmente de qualquer participante com justificativa.</p>
+      <div className="border-b border-neutral-100 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h3 className="text-lg font-black font-display text-neutral-800 uppercase flex items-center gap-2">
+            <span className="w-2.5 h-5 bg-[#009739] block rounded-xs"></span>
+            Gerenciar Pontuação
+          </h3>
+          <p className="text-xs text-neutral-400 font-bold uppercase tracking-wider mt-0.5">
+            Ajustes manuais de pontuação ou reinicialização de campeonato
+          </p>
+        </div>
+
+        {/* Reset Championship Button */}
+        <button
+          type="button"
+          onClick={handleResetAllScores}
+          disabled={resettingTournament}
+          className="self-start sm:self-auto px-3.5 py-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 rounded-lg text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer"
+        >
+          <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+          {resettingTournament ? 'Zerando Pontuações...' : 'Zerar Pontuações & Novo Campeonato'}
+        </button>
       </div>
 
       {errorMsg && (
@@ -158,7 +193,7 @@ export default function AdminScores() {
 
       {/* Manual points change form */}
       <div className="bg-white rounded-xl border border-neutral-150 p-5 shadow-xs max-w-xl">
-        <h4 className="text-sm font-semibold text-neutral-700 mb-4">Ajustar Pontuação</h4>
+        <h4 className="text-sm font-semibold text-neutral-700 mb-4">Ajustar Pontuação Manualmente</h4>
         <form onSubmit={handleAdjustScore} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>

@@ -58,7 +58,23 @@
         },
         "palpite": {
           "type": "string",
-          "description": "Predicted score (e.g., Brasil 2x1 Argentina)"
+          "description": "Predicted score (e.g., Arsenal FC 1 x 0 AS Roma)"
+        },
+        "time_mandante": {
+          "type": "string",
+          "description": "Home team name"
+        },
+        "gols_mandante": {
+          "type": "number",
+          "description": "Predicted home team goals"
+        },
+        "time_visitante": {
+          "type": "string",
+          "description": "Away team name"
+        },
+        "gols_visitante": {
+          "type": "number",
+          "description": "Predicted away team goals"
         },
         "capitao": {
           "type": "string",
@@ -101,6 +117,34 @@
       },
       "required": ["participante", "pontos", "motivo", "data_hora"]
     },
+    "resultado_oficial": {
+      "title": "ResultadoOficial",
+      "description": "Official match outcome stored by admin",
+      "type": "object",
+      "properties": {
+        "rodada_id": {
+          "type": "string",
+          "description": "Round ID"
+        },
+        "time_mandante": {
+          "type": "string",
+          "description": "Home team"
+        },
+        "gols_mandante": {
+          "type": "number",
+          "description": "Official home team goals"
+        },
+        "time_visitante": {
+          "type": "string",
+          "description": "Away team"
+        },
+        "gols_visitante": {
+          "type": "number",
+          "description": "Official away team goals"
+        }
+      },
+      "required": ["rodada_id", "time_mandante", "gols_mandante", "time_visitante", "gols_visitante"]
+    },
     "admin": {
       "title": "Admin",
       "description": "Administrator login credentials",
@@ -134,6 +178,10 @@
     "pontuacoes/{pontuacaoId}": {
       "schema": { "$ref": "#/entities/pontuacao" },
       "description": "Score adjustment history"
+    },
+    "resultados_oficiais/{resultadoId}": {
+      "schema": { "$ref": "#/entities/resultado_oficial" },
+      "description": "Collection of official match results entered by admin"
     },
     "admins/{adminId}": {
       "schema": { "$ref": "#/entities/admin" },
