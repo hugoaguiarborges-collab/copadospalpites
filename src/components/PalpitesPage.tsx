@@ -92,19 +92,53 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
   const [rounds, setRounds] = useState<Rodada[]>([]);
   const [activeRound, setActiveRound] = useState<Rodada | null>(null);
   
-  // Form state
-  const [nome, setNome] = useState('');
-  const [confirmacaoNome, setConfirmacaoNome] = useState('');
+  // Draft storage key so guesses never disappear when page reloads or user types
+  const DRAFT_STORAGE_KEY = 'ucl_palpites_draft_v2';
+
+  // Form state with draft restoration
+  const [nome, setNome] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('ucl_palpites_draft_v2');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed.nome === 'string') return parsed.nome;
+      }
+    } catch (e) {}
+    return '';
+  });
+
+  const [confirmacaoNome, setConfirmacaoNome] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('ucl_palpites_draft_v2');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed.confirmacaoNome === 'string') return parsed.confirmacaoNome;
+      }
+    } catch (e) {}
+    return '';
+  });
+
   const [showSuggestions, setShowSuggestions] = useState(false);
   
-  // Structured match lines with dropdown selectors
-  const [matchLines, setMatchLines] = useState<MatchGuessLine[]>([
-    { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '', capitao: '' },
-    { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '', capitao: '' },
-    { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '', capitao: '' },
-    { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '', capitao: '' },
-    { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '', capitao: '' }
-  ]);
+  // Structured match lines with dropdown selectors restored from draft
+  const [matchLines, setMatchLines] = useState<MatchGuessLine[]>(() => {
+    try {
+      const saved = localStorage.getItem('ucl_palpites_draft_v2');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed.matchLines) && parsed.matchLines.length === 5) {
+          return parsed.matchLines;
+        }
+      }
+    } catch (e) {}
+    return [
+      { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '', capitao: '' },
+      { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '', capitao: '' },
+      { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '', capitao: '' },
+      { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '', capitao: '' },
+      { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '', capitao: '' }
+    ];
+  });
   
   // Submission result states
   const [statusMsg, setStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -139,6 +173,25 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
       return updated;
     });
   };
+
+  // Autosave draft to localStorage so guesses never disappear when typing, choosing captain or refreshing
+  useEffect(() => {
+    try {
+      const hasContent = Boolean(
+        nome.trim() || 
+        confirmacaoNome.trim() || 
+        matchLines.some(l => l.timeMandante || l.timeVisitante || l.golsMandante !== '' || l.golsVisitante !== '' || l.capitao)
+      );
+      if (hasContent) {
+        localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify({
+          nome,
+          confirmacaoNome,
+          matchLines,
+          updatedAt: new Date().toISOString()
+        }));
+      }
+    } catch (e) {}
+  }, [nome, confirmacaoNome, matchLines]);
 
   // Timer useEffect for Countdown
   useEffect(() => {
@@ -215,8 +268,8 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
         closed.sort((a,b) => getRoundNumber(b.nome || b.id) - getRoundNumber(a.nome || a.id));
         setClosedRounds(closed);
 
-        if (closed.length > 0 && !selectedClosedRound) {
-          setSelectedClosedRound(closed[0].id);
+        if (closed.length > 0) {
+          setSelectedClosedRound(prev => prev || closed[0].id);
         }
       } catch (err: any) {
         console.error("Error loading palpites data:", err);
@@ -224,9 +277,7 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
     }
 
     loadData();
-    const interval = setInterval(loadData, 15000);
-    return () => clearInterval(interval);
-  }, [selectedClosedRound]);
+  }, []);
 
   // Load guesses of closed round
   useEffect(() => {
@@ -527,6 +578,11 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
         addAuditLog(`Palpite alterado por ${foundParticipant.nome} para a ${activeRound.nome} às ${hms} (2º envio de segurança que substitui o anterior).`, 'INFO');
       }
 
+      // Clear draft storage on successful submission
+      try {
+        localStorage.removeItem(DRAFT_STORAGE_KEY);
+      } catch (e) {}
+
       // Reset match rows to clean defaults
       setMatchLines([
         { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '', capitao: '' },
@@ -797,20 +853,15 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
             </div>
           )}
 
-          <form 
-            onSubmit={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-            action="javascript:void(0);"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.keyCode === 13) {
-                e.preventDefault();
-                e.stopPropagation();
-              }
-            }}
-            className="space-y-3.5 flex flex-col flex-1"
-          >
+          <div className="space-y-3.5 flex flex-col flex-1">
+            {/* Reassuring Autosave Banner */}
+            <div className="bg-[#050e30]/90 border border-cyan-500/30 rounded-xl px-3.5 py-2 flex items-center justify-between gap-2 text-[11px] text-cyan-200 font-mono">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#10b981] shrink-0"></span>
+                <span>Rascunho seguro: preencha os 5 jogos e capitães. Nada se perde ao atualizar a página e o envio só ocorre quando você clicar em &quot;ENVIAR PALPITE DA CHAMPIONS&quot; ao final.</span>
+              </div>
+            </div>
+
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1 pb-1">
               <div className="flex items-center gap-2">
                 <span className="text-[11px] font-black uppercase tracking-wider text-cyan-300 flex items-center gap-1.5 font-mono">
@@ -1124,7 +1175,7 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
                 ★ 2 Envios por rodada permitidos. O último envio válido antes das terças 13:00 é o considerado.
               </p>
             </div>
-          </form>
+          </div>
           </>
           )}
         </section>
