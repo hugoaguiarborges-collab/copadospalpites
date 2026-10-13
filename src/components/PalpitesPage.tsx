@@ -70,6 +70,19 @@ const COMMON_SCORE_SUGGESTIONS = [
   { label: '2x2', m: '2', v: '2' }
 ];
 
+const POPULAR_CAPTAINS = [
+  'Erling Haaland',
+  'Kylian Mbappé',
+  'Vinícius Júnior',
+  'Bukayo Saka',
+  'Harry Kane',
+  'Robert Lewandowski',
+  'Mohamed Salah',
+  'Lautaro Martínez',
+  'Lamine Yamal',
+  'Jude Bellingham'
+];
+
 interface PalpitesPageProps {
   onSuggestName?: (name: string) => void;
 }
@@ -188,7 +201,14 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
         // A rodada está aberta se status === 'aberta' e ainda não passou da data de fechamento
         const standardOpen = rList.find(r => r.status === 'aberta' && now < new Date(r.fechamento));
         const open = testRoundOpen || standardOpen;
-        setActiveRound(open || null);
+        setActiveRound(prev => {
+          if (!open && !prev) return null;
+          if (!open || !prev) return open || null;
+          if (prev.id === open.id && prev.status === open.status && prev.fechamento === open.fechamento && prev.nome === open.nome) {
+            return prev;
+          }
+          return open;
+        });
 
         // Rodadas com mercado fechado: status === 'encerrada' OU a data de fechamento já foi ultrapassada
         const closed = rList.filter(r => r.status === 'encerrada' || (now >= new Date(r.fechamento) && !r.is_test));
@@ -706,6 +726,9 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
                   setShowSuggestions(true);
                 }}
                 onFocus={() => setShowSuggestions(true)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') e.preventDefault();
+                }}
                 className="w-full border border-cyan-800/60 p-3 rounded-xl text-sm bg-[#050a24] focus:bg-[#070e30] focus:outline-hidden focus:ring-1 focus:ring-cyan-400 font-bold text-white placeholder:text-slate-500 transition-colors shadow-inner"
               />
 
@@ -741,6 +764,9 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
                 placeholder="Digite seu nome exatamente como selecionado..."
                 value={confirmacaoNome}
                 onChange={(e) => setConfirmacaoNome(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') e.preventDefault();
+                }}
                 className="w-full border border-cyan-800/60 p-3 rounded-xl text-sm bg-[#050a24] focus:bg-[#070e30] focus:outline-hidden focus:ring-1 focus:ring-cyan-400 font-bold text-white placeholder:text-slate-500 transition-colors shadow-inner"
               />
             </div>
@@ -771,7 +797,20 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
             </div>
           )}
 
-          <form onSubmit={handleFormSubmit} className="space-y-3.5 flex flex-col flex-1">
+          <form 
+            onSubmit={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            action="javascript:void(0);"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.keyCode === 13) {
+                e.preventDefault();
+                e.stopPropagation();
+              }
+            }}
+            className="space-y-3.5 flex flex-col flex-1"
+          >
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1 pb-1">
               <div className="flex items-center gap-2">
                 <span className="text-[11px] font-black uppercase tracking-wider text-cyan-300 flex items-center gap-1.5 font-mono">
@@ -886,6 +925,12 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
                             placeholder="-"
                             value={line.golsMandante}
                             onChange={(e) => handleMatchChange(index, 'golsMandante', e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.keyCode === 13) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                              }
+                            }}
                             disabled={!activeRound}
                             className="w-8 h-7 text-center text-xs font-black font-mono text-cyan-300 border-x border-cyan-800/50 bg-[#030617] focus:outline-hidden focus:bg-[#070e30]"
                           />
@@ -920,6 +965,12 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
                             placeholder="-"
                             value={line.golsVisitante}
                             onChange={(e) => handleMatchChange(index, 'golsVisitante', e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.keyCode === 13) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                              }
+                            }}
                             disabled={!activeRound}
                             className="w-8 h-7 text-center text-xs font-black font-mono text-cyan-300 border-x border-cyan-800/50 bg-[#030617] focus:outline-hidden focus:bg-[#070e30]"
                           />
@@ -982,19 +1033,57 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
                       </div>
 
                       {/* Capitão do Jogo */}
-                      <div className="flex items-center gap-1.5 shrink-0 sm:max-w-xs w-full sm:w-auto">
-                        <span className="text-[10px] font-bold text-amber-400 flex items-center gap-0.5 shrink-0 font-mono">
-                          <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
-                          Capitão:
-                        </span>
-                        <input
-                          type="text"
-                          placeholder="Haaland, Saka, Mbappé... (+1 pt)"
-                          value={line.capitao}
-                          onChange={(e) => handleMatchChange(index, 'capitao', e.target.value)}
-                          disabled={!activeRound}
-                          className="w-full sm:w-44 px-2 py-1 text-[11px] border border-cyan-800/60 rounded-md bg-[#04081c] focus:outline-hidden focus:ring-1 focus:ring-cyan-400 font-medium text-slate-100 placeholder:text-slate-500"
-                        />
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-1.5 shrink-0 w-full sm:w-auto">
+                        <div className="flex items-center gap-1.5 w-full sm:w-auto">
+                          <span className="text-[10px] font-bold text-amber-400 flex items-center gap-0.5 shrink-0 font-mono">
+                            <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                            Capitão:
+                          </span>
+                          <input
+                            type="text"
+                            placeholder="Haaland, Saka, Mbappé... (+1 pt)"
+                            value={line.capitao || ''}
+                            onChange={(e) => handleMatchChange(index, 'capitao', e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.keyCode === 13) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                              }
+                            }}
+                            autoComplete="off"
+                            autoCorrect="off"
+                            spellCheck={false}
+                            disabled={!activeRound}
+                            className="w-full sm:w-44 px-2 py-1 text-[11px] border border-cyan-800/60 rounded-md bg-[#04081c] focus:outline-hidden focus:ring-1 focus:ring-cyan-400 font-medium text-slate-100 placeholder:text-slate-500"
+                          />
+                        </div>
+                        {/* Sugestões rápidas de capitães das estrelas da Champions */}
+                        <div className="flex items-center gap-1 overflow-x-auto max-w-[260px] scrollbar-none py-0.5 min-h-[26px]">
+                          {line.capitao ? (
+                            <button
+                              type="button"
+                              onClick={() => handleMatchChange(index, 'capitao', '')}
+                              disabled={!activeRound}
+                              className="px-2 py-0.5 rounded text-[9px] font-mono font-bold bg-rose-950/60 hover:bg-rose-900 text-rose-300 border border-rose-500/40 transition-colors cursor-pointer shrink-0 flex items-center gap-1"
+                              title="Remover capitão deste jogo"
+                            >
+                              <span>✕ Limpar ({line.capitao})</span>
+                            </button>
+                          ) : (
+                            ['Haaland', 'Mbappé', 'Vini Jr', 'Saka', 'Kane', 'Lewa'].map((cap) => (
+                              <button
+                                key={cap}
+                                type="button"
+                                onClick={() => handleMatchChange(index, 'capitao', cap)}
+                                disabled={!activeRound}
+                                className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-[#071133] hover:bg-amber-400 hover:text-black text-amber-300/90 border border-amber-500/25 transition-colors cursor-pointer shrink-0"
+                                title={`Escalar ${cap} como capitão`}
+                              >
+                                +{cap}
+                              </button>
+                            ))
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1020,7 +1109,8 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
 
             <div className="pt-3 mt-auto">
               <button
-                type="submit"
+                type="button"
+                onClick={handleFormSubmit}
                 disabled={submitting || !activeRound}
                 className="w-full py-4 text-white bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:from-cyan-400 hover:to-blue-500 active:scale-[0.99] rounded-xl font-black text-lg cursor-pointer transition-all flex items-center justify-center gap-2 shadow-xl shadow-cyan-950/60 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed uppercase tracking-wider font-display"
               >

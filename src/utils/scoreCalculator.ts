@@ -15,10 +15,32 @@ export function normalizeTeamName(name: string): string {
 }
 
 export function areTeamsMatching(teamA: string, teamB: string): boolean {
+  if (!teamA || !teamB) return false;
+  const rawA = teamA.trim().toLowerCase();
+  const rawB = teamB.trim().toLowerCase();
+  if (rawA === rawB) return true;
+
   const normA = normalizeTeamName(teamA);
   const normB = normalizeTeamName(teamB);
   if (!normA || !normB) return false;
-  return normA === normB || normA.includes(normB) || normB.includes(normA);
+  if (normA === normB) return true;
+
+  // Specific exceptions to prevent false matches (e.g., Manchester City vs Manchester United, Real Madrid vs Real Betis)
+  if (
+    (normA.includes('city') && normB.includes('united')) ||
+    (normA.includes('united') && normB.includes('city')) ||
+    (normA.includes('madrid') && normB.includes('betis')) ||
+    (normA.includes('betis') && normB.includes('madrid'))
+  ) {
+    return false;
+  }
+
+  // Only allow substring matching if the shorter term is long enough (at least 5 chars)
+  const minLen = Math.min(normA.length, normB.length);
+  if (minLen >= 5 && (normA.includes(normB) || normB.includes(normA))) {
+    return true;
+  }
+  return false;
 }
 
 export interface ParsedGuess {

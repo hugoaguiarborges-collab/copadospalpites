@@ -36,7 +36,8 @@ import {
   Flame,
   Minus,
   RefreshCw,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Edit
 } from 'lucide-react';
 import { UclStarball, UclTrophy, UclBadge } from './UclAssets';
 
@@ -63,7 +64,17 @@ export default function AdminResults() {
 
   // Individual Captain Goals state per guess ID: { [guessId]: numberOfGoals }
   const [individualCaptainGoals, setIndividualCaptainGoals] = useState<Record<string, number>>({});
+  const [individualCaptainNames, setIndividualCaptainNames] = useState<Record<string, string>>({});
+  const [editingCaptainGuessId, setEditingCaptainGuessId] = useState<string | null>(null);
+  const [editingCaptainTempName, setEditingCaptainTempName] = useState<string>('');
   const [savingGuessId, setSavingGuessId] = useState<string | null>(null);
+
+  const handleSetCustomCaptainName = (guessId: string, name: string) => {
+    setIndividualCaptainNames(prev => ({
+      ...prev,
+      [guessId]: name
+    }));
+  };
 
   // Search and filter in evaluation preview
   const [searchFilter, setSearchFilter] = useState('');
@@ -169,12 +180,17 @@ export default function AdminResults() {
       // Check if this round already has official matches registered
       const targetR = rounds.find(r => r.id === selectedRoundId);
       if (targetR?.jogos_oficiais && targetR.jogos_oficiais.length > 0) {
-        setOfficialMatches(targetR.jogos_oficiais.map(jo => ({
-          timeMandante: jo.time_mandante,
-          timeVisitante: jo.time_visitante,
-          golsMandante: String(jo.gols_mandante),
-          golsVisitante: String(jo.gols_visitante)
-        })));
+        setOfficialMatches(prev => {
+          return targetR.jogos_oficiais!.map(jo => {
+            const existing = prev.find(p => areTeamsMatching(p.timeMandante, jo.time_mandante) && areTeamsMatching(p.timeVisitante, jo.time_visitante));
+            return {
+              timeMandante: jo.time_mandante,
+              timeVisitante: jo.time_visitante,
+              golsMandante: existing && existing.golsMandante !== '' ? existing.golsMandante : String(jo.gols_mandante),
+              golsVisitante: existing && existing.golsVisitante !== '' ? existing.golsVisitante : String(jo.gols_visitante)
+            };
+          });
+        });
       } else {
         const qOficiais = query(
           collection(db, 'resultados_oficiais'),
@@ -193,15 +209,26 @@ export default function AdminResults() {
             });
           });
           if (loaded.length > 0) {
-            setOfficialMatches(loaded);
+            setOfficialMatches(prev => {
+              return loaded.map(l => {
+                const existing = prev.find(p => areTeamsMatching(p.timeMandante, l.timeMandante) && areTeamsMatching(p.timeVisitante, l.timeVisitante));
+                return existing && (existing.golsMandante !== '' || existing.golsVisitante !== '') ? existing : l;
+              });
+            });
           }
         } else {
           // AUTO-DISCOVERY: No official results saved yet, automatically discover matches from participants' guesses!
           const autoDiscovered = extractMatchesFromGuesses(list);
           if (autoDiscovered.length > 0) {
-            setOfficialMatches(autoDiscovered);
+            setOfficialMatches(prev => {
+              // Preserve any scores already entered by the admin in memory
+              return autoDiscovered.map(ad => {
+                const existing = prev.find(p => areTeamsMatching(p.timeMandante, ad.timeMandante) && areTeamsMatching(p.timeVisitante, ad.timeVisitante));
+                return existing && (existing.golsMandante !== '' || existing.golsVisitante !== '') ? existing : ad;
+              });
+            });
           } else {
-            setOfficialMatches([
+            setOfficialMatches(prev => prev.length > 0 ? prev : [
               { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '' }
             ]);
           }
@@ -358,12 +385,17 @@ export default function AdminResults() {
 
         // Find matching guess from this participant
         for (const guess of pGuesses) {
+          const effectiveCaptain = individualCaptainNames[guess.id] !== undefined
+            ? individualCaptainNames[guess.id]
+            : (guess.capitao || '');
+          const guessWithCaptain = { ...guess, capitao: effectiveCaptain };
+
           // Check captain goals override set individually by admin
           const individualGoals = individualCaptainGoals[guess.id] !== undefined 
             ? individualCaptainGoals[guess.id] 
             : (guess.gols_capitao || 0);
 
-          const evalRes = evaluateGuessAgainstResult(guess, gameObj, individualGoals);
+          const evalRes = evaluateGuessAgainstResult(guessWithCaptain, gameObj, individualGoals);
           if (evalRes.matchFound) {
             userTotal += evalRes.pontos;
             userPontosJogo += (evalRes.pontosResultado + evalRes.pontosPlacar);
@@ -371,10 +403,10 @@ export default function AdminResults() {
             userGolsCapitao += evalRes.golsCapitao;
 
             const hasCap = Boolean(
-              guess.capitao && 
-              guess.capitao.trim() !== '' && 
-              guess.capitao.toLowerCase() !== 'nenhum' && 
-              guess.capitao.toLowerCase() !== 'sem capitão'
+              effectiveCaptain && 
+              effectiveCaptain.trim() !== '' && 
+              effectiveCaptain.toLowerCase() !== 'nenhum' && 
+              effectiveCaptain.toLowerCase() !== 'sem capitão'
             );
 
             userDetails.push({
@@ -390,7 +422,7 @@ export default function AdminResults() {
               pontosCapitao: evalRes.pontosCapitao,
               golsCapitao: evalRes.golsCapitao,
               guessId: guess.id,
-              capitaoNome: guess.capitao || '',
+              capitaoNome: effectiveCaptain,
               hasCaptain: hasCap,
               isSaved: guess.avaliado
             });
@@ -460,18 +492,23 @@ export default function AdminResults() {
       const prevPoints = existingGuess?.pontos_concedidos || 0;
       const diffPoints = detail.pontos - prevPoints;
 
-      // 1. Update the individual guess document in Firestore
+      // 1. Update the individual guess document in Firestore safely
+      const effectiveCap = (individualCaptainNames[guessId] !== undefined 
+        ? individualCaptainNames[guessId] 
+        : (detail.capitaoNome || '')).trim();
+
       await updateDoc(doc(db, 'palpites', guessId), {
         avaliado: true,
-        pontos_concedidos: detail.pontos,
-        motivo_detalhado: detail.motivo,
-        acertou_resultado: detail.acertouResultado,
-        acertou_placar: detail.acertouPlacar,
-        gols_capitao: detail.golsCapitao,
-        pontos_capitao: detail.pontosCapitao,
+        pontos_concedidos: detail.pontos ?? 0,
+        motivo_detalhado: detail.motivo || '',
+        acertou_resultado: Boolean(detail.acertouResultado),
+        acertou_placar: Boolean(detail.acertouPlacar),
+        gols_capitao: detail.golsCapitao ?? 0,
+        pontos_capitao: detail.pontosCapitao ?? 0,
         capitao_fez_gol: (detail.golsCapitao || 0) > 0,
-        resultado_oficial: detail.resultadoReal,
-        jogo_oficial: detail.jogo
+        capitao: effectiveCap,
+        resultado_oficial: detail.resultadoReal || '',
+        jogo_oficial: detail.jogo || ''
       });
 
       // 2. If point differential is non-zero, update participant total and add log
@@ -531,10 +568,18 @@ export default function AdminResults() {
           p => p.nome.trim().toLowerCase() === evalItem.participante.trim().toLowerCase()
         );
 
-        if (matchingParticipant && evalItem.totalPontos > 0) {
-          // 1. Update participant total points
+        // Calculate points previously awarded for these guesses in this round
+        const previouslyAwarded = evalItem.detalhes.reduce((sum, d) => {
+          const g = guesses.find(guess => guess.id === d.guessId);
+          return sum + (g?.pontos_concedidos || 0);
+        }, 0);
+
+        const diffPoints = evalItem.totalPontos - previouslyAwarded;
+
+        if (matchingParticipant && diffPoints !== 0) {
+          // 1. Update participant total points safely with differential to prevent duplication
           await updateDoc(doc(db, 'participantes', matchingParticipant.id), {
-            pontos: increment(evalItem.totalPontos)
+            pontos: increment(diffPoints)
           });
 
           // 2. Add score log
@@ -544,7 +589,7 @@ export default function AdminResults() {
 
           await addDoc(collection(db, 'pontuacoes'), {
             participante: matchingParticipant.nome,
-            pontos: evalItem.totalPontos,
+            pontos: diffPoints,
             motivo: `Apuração Oficial • ${roundName} • ${descr}`,
             data_hora: nowISO
           });
@@ -552,20 +597,25 @@ export default function AdminResults() {
           participantsUpdatedCount++;
         }
 
-        // 3. Mark guess documents as evaluated with individual captain goals
+        // 3. Mark guess documents as evaluated with individual captain goals safely
         for (const detail of evalItem.detalhes) {
           if (detail.guessId) {
+            const effectiveCap = (individualCaptainNames[detail.guessId] !== undefined 
+              ? individualCaptainNames[detail.guessId] 
+              : (detail.capitaoNome || '')).trim();
+
             await updateDoc(doc(db, 'palpites', detail.guessId), {
               avaliado: true,
-              pontos_concedidos: detail.pontos,
-              motivo_detalhado: detail.motivo,
-              acertou_resultado: detail.acertouResultado,
-              acertou_placar: detail.acertouPlacar,
-              gols_capitao: detail.golsCapitao,
-              pontos_capitao: detail.pontosCapitao,
+              pontos_concedidos: detail.pontos ?? 0,
+              motivo_detalhado: detail.motivo || '',
+              acertou_resultado: Boolean(detail.acertouResultado),
+              acertou_placar: Boolean(detail.acertouPlacar),
+              gols_capitao: detail.golsCapitao ?? 0,
+              pontos_capitao: detail.pontosCapitao ?? 0,
               capitao_fez_gol: (detail.golsCapitao || 0) > 0,
-              resultado_oficial: detail.resultadoReal,
-              jogo_oficial: detail.jogo
+              capitao: effectiveCap,
+              resultado_oficial: detail.resultadoReal || '',
+              jogo_oficial: detail.jogo || ''
             });
           }
         }
@@ -708,7 +758,7 @@ export default function AdminResults() {
       <div className="border-b border-cyan-500/20 pb-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <UclBadge text="UEFA CONTROL ROOM" variant="live" />
+            <UclBadge text="UEFA CONTROL ROOM" variant="cyan" />
             <span className="text-[10px] font-mono font-bold text-cyan-300/70 tracking-widest uppercase">APURAÇÃO OFICIAL</span>
           </div>
           <h3 className="text-xl sm:text-2xl font-black font-display text-white uppercase flex items-center gap-2 tracking-tight">
@@ -1230,28 +1280,99 @@ export default function AdminResults() {
 
                         {/* Individual Captain Goal Marking Control */}
                         <div className="lg:col-span-5 bg-[#080f33]/90 p-3 rounded-xl border border-cyan-500/20 space-y-2">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[11px] font-extrabold text-slate-300 flex items-center gap-1.5">
-                              ⚽ Capitão:{' '}
-                              {det.hasCaptain ? (
-                                <strong className="text-white bg-[#050b28] px-2 py-0.5 rounded border border-cyan-500/30">
-                                  {det.capitaoNome}
-                                </strong>
-                              ) : (
-                                <span className="text-slate-400 italic">Sem capitão escalado</span>
-                              )}
-                            </span>
+                          {editingCaptainGuessId === det.guessId ? (
+                            <div className="space-y-1.5 p-2 bg-[#050b28] rounded-lg border border-cyan-400/40">
+                              <span className="text-[10px] font-bold text-cyan-300 block">
+                                Digite o nome do capitão:
+                              </span>
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  type="text"
+                                  placeholder="Nome do capitão (ex: Haaland)..."
+                                  value={editingCaptainTempName}
+                                  onChange={(e) => setEditingCaptainTempName(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      handleSetCustomCaptainName(det.guessId, editingCaptainTempName.trim());
+                                      setEditingCaptainGuessId(null);
+                                    }
+                                  }}
+                                  className="flex-1 px-2 py-1 text-xs bg-[#030617] border border-cyan-500/50 rounded text-white font-bold placeholder:text-slate-500 focus:outline-hidden focus:border-cyan-300"
+                                  autoFocus
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    handleSetCustomCaptainName(det.guessId, editingCaptainTempName.trim());
+                                    setEditingCaptainGuessId(null);
+                                  }}
+                                  className="px-2.5 py-1 bg-cyan-600 hover:bg-cyan-500 text-white text-[10px] font-black rounded cursor-pointer transition-colors"
+                                >
+                                  OK
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingCaptainGuessId(null)}
+                                  className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] rounded cursor-pointer transition-colors"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                              {/* Sugestões rápidas de estrelas da Champions */}
+                              <div className="flex items-center gap-1 overflow-x-auto pt-1 scrollbar-none">
+                                {['Haaland', 'Mbappé', 'Vini Jr', 'Saka', 'Kane', 'Lewa'].map((star) => (
+                                  <button
+                                    key={star}
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingCaptainTempName(star);
+                                      handleSetCustomCaptainName(det.guessId, star);
+                                      setEditingCaptainGuessId(null);
+                                    }}
+                                    className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-[#0a1338] hover:bg-cyan-900 text-cyan-300 border border-cyan-700/40 cursor-pointer"
+                                  >
+                                    +{star}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11px] font-extrabold text-slate-300 flex items-center gap-1.5 flex-wrap">
+                                ⚽ Capitão:{' '}
+                                {det.hasCaptain ? (
+                                  <strong className="text-white bg-[#050b28] px-2 py-0.5 rounded border border-cyan-500/30">
+                                    {det.capitaoNome}
+                                  </strong>
+                                ) : (
+                                  <span className="text-slate-400 italic">Sem capitão</span>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingCaptainGuessId(det.guessId);
+                                    setEditingCaptainTempName(det.capitaoNome || '');
+                                  }}
+                                  className="px-1.5 py-0.5 text-cyan-400 hover:text-white bg-[#050b28] hover:bg-cyan-950 border border-cyan-500/25 rounded transition-colors cursor-pointer text-[10px] flex items-center gap-1 font-bold"
+                                  title="Editar ou atribuir capitão para este palpite"
+                                >
+                                  <Edit className="w-2.5 h-2.5" />
+                                  <span>{det.hasCaptain ? 'Alterar' : '+ Adicionar'}</span>
+                                </button>
+                              </span>
 
-                            {det.golsCapitao > 0 ? (
-                              <span className="text-[10px] font-black text-amber-300 bg-amber-950/80 px-2 py-0.5 rounded-full border border-amber-500/40 animate-pulse font-mono">
-                                🔥 +{det.golsCapitao} pt(s) capitão
-                              </span>
-                            ) : (
-                              <span className="text-[10px] font-bold text-slate-400 font-mono">
-                                0 gol
-                              </span>
-                            )}
-                          </div>
+                              {det.golsCapitao > 0 ? (
+                                <span className="text-[10px] font-black text-amber-300 bg-amber-950/80 px-2 py-0.5 rounded-full border border-amber-500/40 animate-pulse font-mono">
+                                  🔥 +{det.golsCapitao} pt(s) capitão
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-bold text-slate-400 font-mono">
+                                  0 gol
+                                </span>
+                              )}
+                            </div>
+                          )}
 
                           {/* Interactive Stepper & Buttons */}
                           {det.hasCaptain ? (
@@ -1302,7 +1423,7 @@ export default function AdminResults() {
                             </div>
                           ) : (
                             <p className="text-[10px] text-slate-400 italic">
-                              Este palpite não possui capitão escalado para pontuar gols.
+                              Sem capitão. Clique em "+ Adicionar" acima para definir o capitão.
                             </p>
                           )}
                         </div>
