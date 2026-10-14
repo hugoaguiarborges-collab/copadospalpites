@@ -11,66 +11,127 @@ import LeaderboardPage from './components/LeaderboardPage';
 import AdminPage from './components/AdminPage';
 import HistoricoRodadas from './components/HistoricoRodadas';
 import { checkAndEnsureNewTournament } from './utils/tournamentReset';
-import { Check, Trophy, Sparkles, History } from 'lucide-react';
+import { getNextTuesday13h, getNextWednesday13h, shouldAutoOpenThursdayMidnight, formatDateTimeDisplay, getRoundNumber, isTuesdayMatchday } from './utils/dateUtils';
+import { REAL_UCL_FIXTURES } from './constants/uclFixtures';
+import { Check, Trophy, Sparkles, History, Shield } from 'lucide-react';
 
 import { UclLogo, UclAtmosphereBackground, UclStarball, UclTrophy } from './components/UclAssets';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'palpites' | 'historico' | 'classificacao' | 'admin'>('palpites');
-  const [seedingActive, setSeedingActive] = useState(true);
   const [schedulerLog, setSchedulerLog] = useState<string>('');
 
-  // 1. Initial Seeding and New Tournament Check
+  // 1. Initial Seeding and New Tournament Check (runs silently in background)
   useEffect(() => {
     async function initTournament() {
       try {
-        setSeedingActive(true);
-        // Guarantee points are zeroed and new tournament is active from today
         await checkAndEnsureNewTournament();
       } catch (err) {
         console.error("Error during initTournament", err);
-      } finally {
-        setSeedingActive(false);
       }
     }
     initTournament();
   }, []);
 
-  // 2. Background Round Closing Scheduler
+  // 2. Background Round Closing & Market Opening Scheduler
+  // - Fecha na terça-feira às 13:00 (jogos de terça)
+  // - Fecha na quarta-feira às 13:00 (jogos de quarta)
+  // - Abre na quinta-feira à meia-noite (00:00) automaticamente se o ADM não tiver atualizado nada
   useEffect(() => {
     async function monitorRoundSchedules() {
       try {
-        const nowStr = new Date().toISOString();
+        const now = new Date();
+        const nowStr = now.toISOString();
         const snap = await getDocs(collection(db, 'rodadas'));
         
         const rounds: any[] = [];
         snap.forEach(docObj => {
           rounds.push({ id: docObj.id, ...docObj.data() });
         });
+        rounds.sort((a, b) => getRoundNumber(a.nome || a.id) - getRoundNumber(b.nome || b.id));
 
-        // Find active open rounds that have passed their fechamento deadline (Tuesday 13h)
-        const lateRounds = rounds.filter(r => r.status === 'aberta' && r.fechamento <= nowStr);
+        // 0. Auto-reconciliação de integridade do ciclo Champions League:
+        // Se hoje for quarta-feira e houver rodada aberta de quarta com fechamento incorreto (> 1 dia, ex: apontando para terça que vem):
+        if (now.getDay() === 3) {
+          const wedDeadline = getNextWednesday13h(now);
+          for (const r of rounds) {
+            if (r.status === 'aberta' && !r.is_test) {
+              const isWedRound = !isTuesdayMatchday(r) || r.id === 'round-1' || r.id === 'round-1-quarta';
+              if (isWedRound) {
+                const diffDays = Math.abs(new Date(r.fechamento).getTime() - wedDeadline.getTime()) / (1000 * 60 * 60 * 24);
+                if (diffDays >= 1) {
+                  console.log(`Scheduler: Corrigindo prazo da ${r.nome} para fechar hoje (quarta-feira) às 13:00.`);
+                  await updateDoc(doc(db, 'rodadas', r.id), {
+                    fechamento: wedDeadline.toISOString()
+                  });
+                  r.fechamento = wedDeadline.toISOString();
+                }
+              }
+            }
+          }
+        } else if (now.getDay() === 2) {
+          const tueDeadline = getNextTuesday13h(now);
+          for (const r of rounds) {
+            if (r.status === 'aberta' && !r.is_test && isTuesdayMatchday(r)) {
+              const diffDays = Math.abs(new Date(r.fechamento).getTime() - tueDeadline.getTime()) / (1000 * 60 * 60 * 24);
+              if (diffDays >= 1) {
+                console.log(`Scheduler: Corrigindo prazo da ${r.nome} para fechar hoje (terça-feira) às 13:00.`);
+                await updateDoc(doc(db, 'rodadas', r.id), {
+                  fechamento: tueDeadline.toISOString()
+                });
+                r.fechamento = tueDeadline.toISOString();
+              }
+            }
+          }
+        }
+
+        // 1. Encerramento automático ao atingir o fechamento (terças ou quartas às 13:00)
+        const lateRounds = rounds.filter(r => r.status === 'aberta' && r.fechamento <= nowStr && !r.is_test);
 
         for (const r of lateRounds) {
-          console.log(`Scheduler: fechamento atingido para ${r.nome} (terça-feira às 13:00). Fechando mercado...`);
+          const closingDayName = new Date(r.fechamento).getDay() === 3 ? 'quarta-feira às 13:00' : 'terça-feira às 13:00';
+          console.log(`Scheduler: fechamento atingido para ${r.nome} (${closingDayName}). Fechando mercado...`);
           
           await updateDoc(doc(db, 'rodadas', r.id), {
             status: 'encerrada'
           });
 
-          setSchedulerLog(`Mercado da "${r.nome}" foi encerrado (terça-feira às 13:00). Aguardando atualização dos placares para abrir a próxima rodada.`);
+          setSchedulerLog(`Mercado da "${r.nome}" encerrado pontualmente (${closingDayName}). Aguardando apuração dos resultados oficiais.`);
+        }
+
+        // 2. Reabertura automática na quinta-feira à meia-noite (00:00) quando o ADM não atualizar nada
+        if (shouldAutoOpenThursdayMidnight(rounds, now)) {
+          // Encontrar a primeira rodada que ainda não foi apurada/aberta
+          const roundToOpen = rounds.find(r => !r.is_test && r.id !== 'rodada-teste' && !r.apurada && r.status !== 'aberta');
+          
+          if (roundToOpen) {
+            const nextTuesday = getNextTuesday13h(now);
+            const rNum = getRoundNumber(roundToOpen.nome || roundToOpen.id);
+            const rDate = (rNum % 2 === 0) ? '21/10' : '20/10';
+            const matches = REAL_UCL_FIXTURES[rDate] || REAL_UCL_FIXTURES['20/10'];
+
+            await updateDoc(doc(db, 'rodadas', roundToOpen.id), {
+              status: 'aberta',
+              abertura: nowStr,
+              fechamento: nextTuesday.toISOString(),
+              data_jogos: rDate,
+              jogos_disponiveis: matches
+            });
+
+            console.log(`Scheduler: Mercado aberto automaticamente na quinta-feira à meia-noite para ${roundToOpen.nome}!`);
+            setSchedulerLog(`Mercado da "${roundToOpen.nome}" ABERTO AUTOMATICAMENTE na quinta-feira à meia-noite! Fechamento na próxima terça-feira às 13:00 (${formatDateTimeDisplay(nextTuesday.toISOString())}).`);
+          }
         }
       } catch (err) {
         console.error("Error running scheduler monitor", err);
       }
     }
 
-    if (!seedingActive) {
-      monitorRoundSchedules();
-      const timerId = setInterval(monitorRoundSchedules, 15000);
-      return () => clearInterval(timerId);
-    }
-  }, [seedingActive]);
+    monitorRoundSchedules();
+    // Executar verificação a cada 30 segundos
+    const timer = setInterval(monitorRoundSchedules, 30000);
+    return () => clearInterval(timer);
+  }, []);
 
   return (
     <div className="min-h-screen bg-[#030719] text-slate-100 font-sans flex flex-col relative selection:bg-cyan-500 selection:text-black">
@@ -89,80 +150,78 @@ export default function App() {
       )}
 
       {/* Main navigation header - Champions League Broadcast Grade */}
-      <header className="relative z-40 bg-[#050b28]/95 backdrop-blur-md border-b border-cyan-500/20 shadow-xl shadow-black/50 sticky top-0 shrink-0">
+      <header className="relative z-40 bg-[#050b28]/95 backdrop-blur-md border-b border-cyan-500/20 shadow-xl shadow-black/50 sticky top-0 shrink-0 w-full overflow-hidden">
         {/* Glow Line Top */}
         <div className="h-[2px] w-full bg-gradient-to-r from-blue-700 via-cyan-400 to-indigo-600" />
 
-        <div className="max-w-6xl mx-auto px-4 sm:px-6">
-          <div className="flex flex-col md:flex-row items-center justify-between py-2.5 md:py-0 md:h-20 gap-3">
+        <div className="max-w-6xl mx-auto px-2 sm:px-6 w-full">
+          <div className="flex flex-col md:flex-row items-center justify-between py-2 sm:py-2.5 md:py-0 md:h-20 gap-2 sm:gap-3 w-full">
             {/* Logo area */}
-            <UclLogo size="md" />
+            <div className="w-full md:w-auto flex justify-center md:justify-start">
+              <UclLogo size="md" />
+            </div>
 
-            {/* Navigation tabs - UEFA Segmented Match Center */}
-            <nav className="flex gap-1 bg-[#091136]/90 p-1 rounded-xl border border-cyan-500/25 shadow-inner">
+            {/* Navigation tabs - UEFA Segmented Match Center (grid on mobile, flex on desktop) */}
+            <nav className="w-full md:w-auto grid grid-cols-4 md:flex gap-1 bg-[#091136]/90 p-1 rounded-xl border border-cyan-500/25 shadow-inner">
               <button
                 onClick={() => setActiveTab('palpites')}
-                className={`px-3 sm:px-4 py-2 rounded-lg font-bold text-xs transition-all cursor-pointer flex items-center gap-1.5 ${
+                className={`py-2 px-1 sm:px-3.5 rounded-lg font-bold text-[11px] sm:text-xs transition-all cursor-pointer flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 ${
                   activeTab === 'palpites'
                     ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-black shadow-md shadow-cyan-950/60 border border-cyan-300/40'
                     : 'text-slate-300 hover:text-white hover:bg-white/5'
                 }`}
               >
-                <UclStarball className={`w-3.5 h-3.5 ${activeTab === 'palpites' ? 'text-white' : 'text-cyan-400'}`} />
-                PALPITES
+                <UclStarball className={`w-3.5 h-3.5 shrink-0 ${activeTab === 'palpites' ? 'text-white' : 'text-cyan-400'}`} />
+                <span className="truncate">Palpites</span>
               </button>
               <button
                 onClick={() => setActiveTab('historico')}
-                className={`px-3 sm:px-4 py-2 rounded-lg font-bold text-xs transition-all cursor-pointer flex items-center gap-1.5 ${
+                className={`py-2 px-1 sm:px-3.5 rounded-lg font-bold text-[11px] sm:text-xs transition-all cursor-pointer flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 ${
                   activeTab === 'historico'
                     ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-black shadow-md shadow-cyan-950/60 border border-cyan-300/40'
                     : 'text-slate-300 hover:text-white hover:bg-white/5'
                 }`}
               >
-                <History className="w-3.5 h-3.5 text-cyan-400" />
-                RODADAS ANTERIORES
+                <History className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                <span className="sm:hidden truncate">Histórico</span>
+                <span className="hidden sm:inline truncate">Anteriores</span>
               </button>
               <button
                 onClick={() => setActiveTab('classificacao')}
-                className={`px-3 sm:px-4 py-2 rounded-lg font-bold text-xs transition-all cursor-pointer flex items-center gap-1.5 ${
+                className={`py-2 px-1 sm:px-3.5 rounded-lg font-bold text-[11px] sm:text-xs transition-all cursor-pointer flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 ${
                   activeTab === 'classificacao'
                     ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-black shadow-md shadow-cyan-950/60 border border-cyan-300/40'
                     : 'text-slate-300 hover:text-white hover:bg-white/5'
                 }`}
               >
-                <UclTrophy className="w-4 h-4 text-cyan-200" />
-                CLASSIFICAÇÃO
+                <UclTrophy className="w-3.5 h-3.5 text-cyan-200 shrink-0" />
+                <span className="sm:hidden truncate">Ranking</span>
+                <span className="hidden sm:inline truncate">Classificação</span>
               </button>
               <button
                 onClick={() => setActiveTab('admin')}
-                className={`px-3 sm:px-4 py-2 rounded-lg font-bold text-xs transition-all cursor-pointer flex items-center gap-1.5 ${
+                className={`py-2 px-1 sm:px-3.5 rounded-lg font-bold text-[11px] sm:text-xs transition-all cursor-pointer flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 ${
                   activeTab === 'admin'
                     ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-black shadow-md shadow-cyan-950/60 border border-cyan-300/40'
                     : 'text-slate-300 hover:text-white hover:bg-white/5'
                 }`}
               >
-                ADMINISTRAÇÃO
+                <Shield className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                <span className="truncate">Admin</span>
               </button>
             </nav>
           </div>
         </div>
       </header>
 
-      {/* Main Container Stage */}
-      <main className="relative z-10 flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6">
-        {seedingActive ? (
-          <div className="py-24 text-center font-mono text-cyan-300 text-sm flex flex-col items-center justify-center gap-3">
-            <UclStarball className="w-10 h-10 animate-spin text-cyan-400" glow />
-            <span>Carregando a Noite de UEFA Champions League...</span>
-          </div>
-        ) : (
-          <div className="transition-all duration-300">
-            {activeTab === 'palpites' && <PalpitesPage />}
-            {activeTab === 'historico' && <HistoricoRodadas />}
-            {activeTab === 'classificacao' && <LeaderboardPage />}
-            {activeTab === 'admin' && <AdminPage />}
-          </div>
-        )}
+      {/* Main Container Stage - Instant Zero-Delay Opening */}
+      <main className="relative z-10 flex-1 max-w-6xl w-full mx-auto px-2 sm:px-6 py-4 sm:py-6 overflow-x-hidden">
+        <div className="transition-all duration-300 w-full max-w-full overflow-x-hidden">
+          {activeTab === 'palpites' && <PalpitesPage />}
+          {activeTab === 'historico' && <HistoricoRodadas />}
+          {activeTab === 'classificacao' && <LeaderboardPage />}
+          {activeTab === 'admin' && <AdminPage />}
+        </div>
       </main>
 
       {/* Champions League Official Broadcast Footer */}

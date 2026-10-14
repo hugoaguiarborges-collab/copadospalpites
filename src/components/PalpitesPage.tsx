@@ -1,373 +1,264 @@
 import React, { useState, useEffect } from 'react';
 import { 
   collection, 
-  addDoc, 
   getDocs, 
   query, 
-  where, 
-  orderBy,
-  doc,
-  updateDoc
+  where,
+  writeBatch,
+  doc
 } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../firebase';
+import { db } from '../firebase';
 import { Participante, Rodada, Palpite } from '../types';
 import { TEAMS_LIST } from '../constants/teams';
 import { 
-  Sparkles, 
-  Calendar, 
   CheckCircle, 
   AlertCircle, 
-  ShieldAlert, 
-  Award, 
-  User, 
   Star, 
-  Clock, 
-  FileText, 
-  Check, 
-  AlertTriangle, 
+  Minus, 
+  Plus, 
+  Users, 
+  RotateCcw, 
+  ChevronRight,
+  ChevronLeft,
   Info,
-  RotateCcw,
-  Lock,
-  Unlock,
-  Users,
-  Eye,
-  Minus,
-  Plus
+  Trophy,
+  Shield,
+  Sparkles,
+  Check,
+  LayoutGrid,
+  ListFilter,
+  Lock
 } from 'lucide-react';
-import { getNextTuesday13h, formatDateTimeDisplay, isMarketOpen, getRoundNumber } from '../utils/dateUtils';
-import TabelaParticipacao from './TabelaParticipacao';
-import HistoricoRodadas from './HistoricoRodadas';
-import { UclStarball, UclTrophy } from './UclAssets';
+import { getRoundNumber, getFriendlyClosingLabel, getNextWednesday13h } from '../utils/dateUtils';
+import { UclStarball, UclBadge } from './UclAssets';
+import RoundInfoDrawer from './RoundInfoDrawer';
 
-interface AuditLogEntry {
-  id: string;
-  timestamp: string;
-  evento: string;
-  status: 'SUCESSO' | 'ALERTA' | 'INFO';
-  origem: string;
-}
-
-export interface MatchGuessLine {
-  timeMandante: string;
-  golsMandante: string;
-  golsVisitante: string;
-  timeVisitante: string;
+export interface SingleGameGuess {
+  id: number; // 1 to 5
+  tipo: 'vitoria' | 'empate';
+  vencedor: string; // chosen team for vitoria
+  clube1: string; // first team for empate
+  clube2: string; // second team for empate
+  golsVencedor: string; // e.g. "2"
+  golsPerdedor: string; // e.g. "0"
+  golsEmpate: string; // e.g. "1"
   capitao: string;
 }
 
-const SCORE_OPTIONS = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15'];
-
-const COMMON_SCORE_SUGGESTIONS = [
-  { label: '1x0', m: '1', v: '0' },
-  { label: '2x1', m: '2', v: '1' },
-  { label: '2x0', m: '2', v: '0' },
-  { label: '1x1', m: '1', v: '1' },
-  { label: '0x0', m: '0', v: '0' },
-  { label: '0x1', m: '0', v: '1' },
-  { label: '1x2', m: '1', v: '2' },
-  { label: '0x2', m: '0', v: '2' },
-  { label: '3x1', m: '3', v: '1' },
-  { label: '2x2', m: '2', v: '2' }
+const STAR_CAPTAINS = [
+  'Haaland',
+  'Mbappé',
+  'Vini Jr',
+  'Saka',
+  'Kane',
+  'Lewandowski',
+  'Salah',
+  'Rodrygo'
 ];
 
-const POPULAR_CAPTAINS = [
-  'Erling Haaland',
-  'Kylian Mbappé',
-  'Vinícius Júnior',
-  'Bukayo Saka',
-  'Harry Kane',
-  'Robert Lewandowski',
-  'Mohamed Salah',
-  'Lautaro Martínez',
-  'Lamine Yamal',
-  'Jude Bellingham'
+const WIN_PRESETS = ['1x0', '2x0', '2x1', '3x0', '3x1', '3x2', '4x0', '4x1'];
+const DRAW_PRESETS = ['0x0', '1x1', '2x2', '3x3'];
+
+const DEFAULT_GAMES: SingleGameGuess[] = [
+  { id: 1, tipo: 'vitoria', vencedor: '', clube1: '', clube2: '', golsVencedor: '2', golsPerdedor: '0', golsEmpate: '1', capitao: '' },
+  { id: 2, tipo: 'vitoria', vencedor: '', clube1: '', clube2: '', golsVencedor: '2', golsPerdedor: '1', golsEmpate: '1', capitao: '' },
+  { id: 3, tipo: 'vitoria', vencedor: '', clube1: '', clube2: '', golsVencedor: '1', golsPerdedor: '0', golsEmpate: '0', capitao: '' },
+  { id: 4, tipo: 'vitoria', vencedor: '', clube1: '', clube2: '', golsVencedor: '3', golsPerdedor: '1', golsEmpate: '2', capitao: '' },
+  { id: 5, tipo: 'vitoria', vencedor: '', clube1: '', clube2: '', golsVencedor: '2', golsPerdedor: '0', golsEmpate: '1', capitao: '' }
 ];
+
+function sanitizeGames(rawList: any): SingleGameGuess[] {
+  if (!Array.isArray(rawList)) return DEFAULT_GAMES;
+  return [1, 2, 3, 4, 5].map((idx) => {
+    const item = rawList.find((g: any) => g && g.id === idx) || rawList[idx - 1] || {};
+    return {
+      id: idx,
+      tipo: item.tipo === 'empate' ? 'empate' : 'vitoria',
+      vencedor: typeof item.vencedor === 'string' ? item.vencedor : '',
+      clube1: typeof item.clube1 === 'string' ? item.clube1 : '',
+      clube2: typeof item.clube2 === 'string' ? item.clube2 : '',
+      golsVencedor: typeof item.golsVencedor === 'string' ? item.golsVencedor : '2',
+      golsPerdedor: typeof item.golsPerdedor === 'string' ? item.golsPerdedor : '0',
+      golsEmpate: typeof item.golsEmpate === 'string' ? item.golsEmpate : '1',
+      capitao: typeof item.capitao === 'string' ? item.capitao : ''
+    };
+  });
+}
+
+// Standalone Countdown Component - avoids re-rendering the parent form!
+function RoundCountdown({ fechamento }: { fechamento: string }) {
+  const [timeLeft, setTimeLeft] = useState<{ d: number; h: number; m: number; s: number } | null>(null);
+
+  useEffect(() => {
+    const calc = () => {
+      const diff = new Date(fechamento).getTime() - Date.now();
+      if (diff <= 0) {
+        setTimeLeft(null);
+        return;
+      }
+      setTimeLeft({
+        d: Math.floor(diff / (1000 * 60 * 60 * 24)),
+        h: Math.floor((diff / (1000 * 60 * 60)) % 24),
+        m: Math.floor((diff / 1000 / 60) % 60),
+        s: Math.floor((diff / 1000) % 60),
+      });
+    };
+    calc();
+    const interval = setInterval(calc, 1000);
+    return () => clearInterval(interval);
+  }, [fechamento]);
+
+  if (!timeLeft) return null;
+
+  return (
+    <div className="flex items-center gap-1 font-mono text-[11px] text-cyan-300 font-bold bg-[#071138] px-2 py-0.5 rounded-lg border border-cyan-500/30 shrink-0">
+      <span className="text-cyan-400">⏱</span>
+      <span>
+        {timeLeft.d > 0 ? `${timeLeft.d}d ` : ''}
+        {String(timeLeft.h).padStart(2, '0')}:
+        {String(timeLeft.m).padStart(2, '0')}:
+        {String(timeLeft.s).padStart(2, '0')}
+      </span>
+    </div>
+  );
+}
 
 interface PalpitesPageProps {
   onSuggestName?: (name: string) => void;
 }
 
 export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
+  const DRAFT_STORAGE_KEY = 'ucl_palpites_draft_v7';
+
   const [participantes, setParticipantes] = useState<Participante[]>([]);
   const [rounds, setRounds] = useState<Rodada[]>([]);
   const [activeRound, setActiveRound] = useState<Rodada | null>(null);
-  
-  // Draft storage key so guesses never disappear when page reloads or user types
-  const DRAFT_STORAGE_KEY = 'ucl_palpites_draft_v2';
+  const [closedRounds, setClosedRounds] = useState<Rodada[]>([]);
+  const [allRoundGuesses, setAllRoundGuesses] = useState<Palpite[]>([]);
 
-  // Form state with draft restoration
+  // Lateral Drawer modal state
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+
+  // Active game tab: 1, 2, 3, 4, 5 (for ultra-compact, zero-scroll experience)
+  const [activeGameId, setActiveGameId] = useState<number>(1);
+  // View mode: 'tabs' (super compact 1-game-at-a-time) or 'all' (all 5 compact stacked)
+  const [viewMode, setViewMode] = useState<'tabs' | 'all'>('tabs');
+
+  // Form states with silent localStorage draft restore
   const [nome, setNome] = useState<string>(() => {
     try {
-      const saved = localStorage.getItem('ucl_palpites_draft_v2');
+      const saved = localStorage.getItem('ucl_palpites_draft_v7');
       if (saved) {
         const parsed = JSON.parse(saved);
         if (typeof parsed.nome === 'string') return parsed.nome;
       }
-    } catch (e) {}
+    } catch {}
     return '';
   });
 
   const [confirmacaoNome, setConfirmacaoNome] = useState<string>(() => {
     try {
-      const saved = localStorage.getItem('ucl_palpites_draft_v2');
+      const saved = localStorage.getItem('ucl_palpites_draft_v7');
       if (saved) {
         const parsed = JSON.parse(saved);
         if (typeof parsed.confirmacaoNome === 'string') return parsed.confirmacaoNome;
       }
-    } catch (e) {}
+    } catch {}
     return '';
   });
 
   const [showSuggestions, setShowSuggestions] = useState(false);
-  
-  // Structured match lines with dropdown selectors restored from draft
-  const [matchLines, setMatchLines] = useState<MatchGuessLine[]>(() => {
+
+  // The 5 match guesses
+  const [games, setGames] = useState<SingleGameGuess[]>(() => {
     try {
-      const saved = localStorage.getItem('ucl_palpites_draft_v2');
+      const saved = localStorage.getItem('ucl_palpites_draft_v7');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed.matchLines) && parsed.matchLines.length === 5) {
-          return parsed.matchLines;
-        }
+        return sanitizeGames(parsed.games);
       }
-    } catch (e) {}
-    return [
-      { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '', capitao: '' },
-      { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '', capitao: '' },
-      { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '', capitao: '' },
-      { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '', capitao: '' },
-      { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '', capitao: '' }
-    ];
+    } catch {}
+    return DEFAULT_GAMES;
   });
-  
-  // Submission result states
+
   const [statusMsg, setStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submissionCount, setSubmissionCount] = useState<number>(0);
 
-  // Closed rounds guesses state
-  const [closedRounds, setClosedRounds] = useState<Rodada[]>([]);
-  const [selectedClosedRound, setSelectedClosedRound] = useState<string>('');
-  const [closedRoundGuesses, setClosedRoundGuesses] = useState<Palpite[]>([]);
-  const [loadingGuesses, setLoadingGuesses] = useState(false);
-  const [closedViewMode, setClosedViewMode] = useState<'tabela' | 'cards'>('tabela');
+  // Load initial tournament data ONCE on mount
+  useEffect(() => {
+    async function loadInitialData() {
+      try {
+        const [pSnap, rSnap] = await Promise.all([
+          getDocs(collection(db, 'participantes')),
+          getDocs(collection(db, 'rodadas'))
+        ]);
 
-  // Countdown timer state
-  const [timeLeft, setTimeLeft] = useState<{ days: number; hours: number; minutes: number; seconds: number } | null>(null);
+        const pList: Participante[] = [];
+        pSnap.forEach(d => pList.push({ id: d.id, ...d.data() } as Participante));
+        pList.sort((a, b) => a.nome.localeCompare(b.nome));
+        setParticipantes(pList);
 
-  // Local Audit Logs state
-  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
+        const rList: Rodada[] = [];
+        rSnap.forEach(d => rList.push({ id: d.id, ...d.data() } as Rodada));
+        rList.sort((a, b) => getRoundNumber(a.nome || a.id) - getRoundNumber(b.nome || b.id));
+        setRounds(rList);
 
-  // Local Audit Logs helper
-  const addAuditLog = (evento: string, status: 'SUCESSO' | 'ALERTA' | 'INFO' = 'INFO') => {
-    const newEntry: AuditLogEntry = {
-      id: 'TX-' + Math.random().toString(36).substr(2, 9).toUpperCase(),
-      timestamp: new Date().toISOString(),
-      evento,
-      status,
-      origem: 'Sessão Local Browser'
-    };
-    setAuditLogs(prev => {
-      const updated = [newEntry, ...prev].slice(0, 30);
-      localStorage.setItem('copapalpites_audit_log_v2', JSON.stringify(updated));
-      return updated;
-    });
-  };
+        const now = new Date();
+        const testRoundOpen = rList.find(r => (r.is_test || r.id === 'rodada-teste') && r.status === 'aberta');
+        let standardOpen = rList.find(r => r.status === 'aberta' && now < new Date(r.fechamento));
+        
+        // Se hoje for quarta-feira e houver rodada aberta de quarta-feira:
+        if (!standardOpen && now.getDay() === 3) {
+          standardOpen = rList.find(r => r.status === 'aberta' && !r.is_test);
+        }
 
-  // Autosave draft to localStorage so guesses never disappear when typing, choosing captain or refreshing
+        const open = testRoundOpen || standardOpen || null;
+        if (open && !open.is_test && now.getDay() === 3) {
+          const wed13h = getNextWednesday13h(now);
+          if (new Date(open.fechamento).getTime() > wed13h.getTime() + 24 * 60 * 60 * 1000) {
+            open.fechamento = wed13h.toISOString();
+          }
+        }
+        setActiveRound(open);
+
+        const closed = rList.filter(r => r.status === 'encerrada' || (now >= new Date(r.fechamento) && !r.is_test));
+        closed.sort((a, b) => getRoundNumber(b.nome || b.id) - getRoundNumber(a.nome || a.id));
+        setClosedRounds(closed);
+
+        if (open) {
+          const gSnap = await getDocs(query(collection(db, 'palpites'), where('rodada', '==', open.id)));
+          const gList: Palpite[] = [];
+          gSnap.forEach(d => gList.push({ id: d.id, ...d.data() } as Palpite));
+          setAllRoundGuesses(gList);
+        }
+      } catch (err) {
+        console.error("Error loading initial data in PalpitesPage:", err);
+      }
+    }
+
+    loadInitialData();
+  }, []);
+
+  // Silent draft persistence to localStorage
   useEffect(() => {
     try {
       const hasContent = Boolean(
         nome.trim() || 
         confirmacaoNome.trim() || 
-        matchLines.some(l => l.timeMandante || l.timeVisitante || l.golsMandante !== '' || l.golsVisitante !== '' || l.capitao)
+        games.some(g => g.vencedor || g.clube1 || (g.capitao || '').trim())
       );
       if (hasContent) {
         localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify({
           nome,
           confirmacaoNome,
-          matchLines,
-          updatedAt: new Date().toISOString()
+          games
         }));
       }
-    } catch (e) {}
-  }, [nome, confirmacaoNome, matchLines]);
+    } catch {}
+  }, [nome, confirmacaoNome, games]);
 
-  // Timer useEffect for Countdown
-  useEffect(() => {
-    if (!activeRound) {
-      setTimeLeft(null);
-      return;
-    }
-    const updateTimer = () => {
-      const totalMs = new Date(activeRound.fechamento).getTime() - new Date().getTime();
-      if (totalMs <= 0) {
-        setTimeLeft(null);
-      } else {
-        const seconds = Math.floor((totalMs / 1000) % 60);
-        const minutes = Math.floor((totalMs / 1000 / 60) % 60);
-        const hours = Math.floor((totalMs / (1000 * 60 * 60)) % 24);
-        const days = Math.floor(totalMs / (1000 * 60 * 60 * 24));
-        setTimeLeft({ days, hours, minutes, seconds });
-      }
-    };
-
-    updateTimer();
-    const timer = setInterval(updateTimer, 1000);
-    return () => clearInterval(timer);
-  }, [activeRound]);
-
-  // Load audit logs on boot
-  useEffect(() => {
-    const savedLogs = localStorage.getItem('copapalpites_audit_log_v2');
-    if (savedLogs) {
-      try {
-        setAuditLogs(JSON.parse(savedLogs));
-      } catch {
-        // Fallback
-      }
-    }
-  }, []);
-
-  // Real-time synchronization
-  useEffect(() => {
-    async function loadData() {
-      try {
-        const pSnap = await getDocs(collection(db, 'participantes'));
-        const pList: Participante[] = [];
-        pSnap.forEach((doc) => {
-          pList.push({ id: doc.id, ...doc.data() } as Participante);
-        });
-        setParticipantes(pList);
-
-        const rSnap = await getDocs(collection(db, 'rodadas'));
-        const rList: Rodada[] = [];
-        rSnap.forEach((doc) => {
-          rList.push({ id: doc.id, ...doc.data() } as Rodada);
-        });
-        rList.sort((a,b) => getRoundNumber(a.nome || a.id) - getRoundNumber(b.nome || b.id));
-        setRounds(rList);
-
-        const now = new Date();
-        // Se a rodada de teste estiver cadastrada e ativa (aberta), dar prioridade total a ela
-        const testRoundOpen = rList.find(r => (r.is_test || r.id === 'rodada-teste') && r.status === 'aberta');
-        // A rodada está aberta se status === 'aberta' e ainda não passou da data de fechamento
-        const standardOpen = rList.find(r => r.status === 'aberta' && now < new Date(r.fechamento));
-        const open = testRoundOpen || standardOpen;
-        setActiveRound(prev => {
-          if (!open && !prev) return null;
-          if (!open || !prev) return open || null;
-          if (prev.id === open.id && prev.status === open.status && prev.fechamento === open.fechamento && prev.nome === open.nome) {
-            return prev;
-          }
-          return open;
-        });
-
-        // Rodadas com mercado fechado: status === 'encerrada' OU a data de fechamento já foi ultrapassada
-        const closed = rList.filter(r => r.status === 'encerrada' || (now >= new Date(r.fechamento) && !r.is_test));
-        closed.sort((a,b) => getRoundNumber(b.nome || b.id) - getRoundNumber(a.nome || a.id));
-        setClosedRounds(closed);
-
-        if (closed.length > 0) {
-          setSelectedClosedRound(prev => prev || closed[0].id);
-        }
-      } catch (err: any) {
-        console.error("Error loading palpites data:", err);
-      }
-    }
-
-    loadData();
-  }, []);
-
-  // Load guesses of closed round
-  useEffect(() => {
-    async function loadClosedGuesses() {
-      if (!selectedClosedRound) {
-        setClosedRoundGuesses([]);
-        return;
-      }
-      
-      const targetRound = rounds.find(r => r.id === selectedClosedRound);
-      const nowISO = new Date().toISOString();
-      const isActuallyClosed = targetRound && (targetRound.status === 'encerrada' || targetRound.fechamento <= nowISO);
-      
-      if (!isActuallyClosed) {
-        setClosedRoundGuesses([]);
-        return;
-      }
-
-      setLoadingGuesses(true);
-      try {
-        const q = query(
-          collection(db, 'palpites'),
-          where('rodada', '==', selectedClosedRound),
-          orderBy('data_hora_envio', 'asc')
-        );
-        const snap = await getDocs(q);
-        const list: Palpite[] = [];
-        snap.forEach((doc) => {
-          list.push({ id: doc.id, ...doc.data() } as Palpite);
-        });
-        setClosedRoundGuesses(list);
-      } catch (err) {
-        console.error("Error loading closed guesses:", err);
-      } finally {
-        setLoadingGuesses(false);
-      }
-    }
-
-    loadClosedGuesses();
-  }, [selectedClosedRound, rounds]);
-
-  // Dynamically check and sync the participant's active round submissions
-  useEffect(() => {
-    if (!activeRound) {
-      setSubmissionCount(0);
-      return;
-    }
-    const foundParticipant = participantes.find(p => p.nome.trim().toLowerCase() === nome.trim().toLowerCase());
-    if (!foundParticipant) {
-      setSubmissionCount(0);
-      return;
-    }
-
-    async function checkSubmissions() {
-      const path = 'palpites';
-      const storageKey = `palpites_count_${foundParticipant.id}_${activeRound.id}`;
-      let count = 0;
-      try {
-        const q = query(
-          collection(db, path),
-          where('participante', '==', foundParticipant.nome),
-          where('rodada', '==', activeRound.id)
-        );
-        const snap = await getDocs(q);
-        let hasSub1 = false;
-        let hasSub2 = false;
-        snap.forEach(doc => {
-          const d = doc.data();
-          if (d.envio_numero === 1) hasSub1 = true;
-          if (d.envio_numero === 2) hasSub2 = true;
-        });
-        if (hasSub2) count = 2;
-        else if (hasSub1) count = 1;
-
-        if (count > 0) {
-          localStorage.setItem(storageKey, String(count));
-        } else {
-          localStorage.removeItem(storageKey);
-        }
-      } catch (err) {
-        const saved = localStorage.getItem(storageKey);
-        count = saved ? parseInt(saved, 10) : 0;
-      }
-      setSubmissionCount(count);
-    }
-
-    checkSubmissions();
-  }, [nome, activeRound, participantes]);
-
-  // Autocomplete suggestions
+  // Name suggestions filter
   const suggestions = participantes.filter(p => 
     p.nome.toLowerCase().includes(nome.toLowerCase()) && 
     p.nome.toLowerCase() !== nome.toLowerCase()
@@ -375,83 +266,122 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
 
   const handleSelectSuggestion = (pNome: string) => {
     setNome(pNome);
-    setConfirmacaoNome(''); // O participante deve digitar obrigatoriamente o nome na confirmação!
+    setConfirmacaoNome('');
     setShowSuggestions(false);
     if (onSuggestName) onSuggestName(pNome);
-  };
 
-  const handleMatchChange = (index: number, field: keyof MatchGuessLine, value: string) => {
-    setMatchLines(prev => {
-      const updated = [...prev];
-      updated[index] = { ...updated[index], [field]: value };
-      return updated;
-    });
-  };
-
-
-  const handleClearMatch = (index: number) => {
-    setMatchLines(prev => {
-      const updated = [...prev];
-      updated[index] = { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '', capitao: '' };
-      return updated;
-    });
-  };
-
-  const handleStepGoals = (index: number, field: 'golsMandante' | 'golsVisitante', delta: number) => {
-    setMatchLines(prev => {
-      const updated = [...prev];
-      const currentStr = updated[index][field];
-      const currentVal = currentStr === '' ? (delta > 0 ? 0 : 0) : parseInt(currentStr, 10);
-      const nextVal = Math.max(0, isNaN(currentVal) ? (delta > 0 ? 1 : 0) : currentVal + delta);
-      updated[index] = { ...updated[index], [field]: String(nextVal) };
-      return updated;
-    });
-  };
-
-  const handleApplyPresetToMatch = (index: number, m: string, v: string) => {
-    setMatchLines(prev => {
-      const updated = [...prev];
-      updated[index] = { ...updated[index], golsMandante: m, golsVisitante: v };
-      return updated;
-    });
-  };
-
-  const handleApplyPresetToAllMatches = (m: string, v: string) => {
-    setMatchLines(prev => prev.map(line => ({ ...line, golsMandante: m, golsVisitante: v })));
-  };
-
-  const formatDateTime = (isoString: string) => {
-    if (!isoString) return '';
-    try {
-      const date = new Date(isoString);
-      const day = String(date.getDate()).padStart(2, '0');
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const year = date.getFullYear();
-      const hours = String(date.getHours()).padStart(2, '0');
-      const minutes = String(date.getMinutes()).padStart(2, '0');
-      return `${day}/${month}/${year} às ${hours}:${minutes}`;
-    } catch {
-      return isoString;
+    if (activeRound) {
+      const pFound = participantes.find(p => p.nome.toLowerCase() === pNome.toLowerCase());
+      if (pFound) {
+        const storageKey = `palpites_count_${pFound.id}_${activeRound.id}`;
+        const saved = localStorage.getItem(storageKey);
+        setSubmissionCount(saved ? parseInt(saved, 10) : 0);
+      }
     }
   };
 
-  const handleFormSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Modify single game safely
+  const updateGame = (gameId: number, patch: Partial<SingleGameGuess>) => {
+    setGames(prev => prev.map(g => g.id === gameId ? { ...g, ...patch } : g));
+  };
+
+  const handleToggleTipo = (gameId: number, newTipo: 'vitoria' | 'empate') => {
+    updateGame(gameId, { tipo: newTipo });
+  };
+
+  const handleSelectWinner = (gameId: number, team: string) => {
+    updateGame(gameId, { vencedor: team });
+  };
+
+  const handleApplyWinPreset = (gameId: number, preset: string) => {
+    const [w, l] = preset.split('x');
+    updateGame(gameId, { golsVencedor: w, golsPerdedor: l });
+  };
+
+  const handleApplyDrawPreset = (gameId: number, preset: string) => {
+    const [g] = preset.split('x');
+    updateGame(gameId, { golsEmpate: g });
+  };
+
+  const handleStepScore = (gameId: number, field: 'golsVencedor' | 'golsPerdedor' | 'golsEmpate', delta: number) => {
+    setGames(prev => prev.map(g => {
+      if (g.id !== gameId) return g;
+      const cur = g[field] === '' ? 0 : parseInt(g[field], 10);
+      const next = Math.max(0, isNaN(cur) ? 0 : cur + delta);
+      return { ...g, [field]: String(next) };
+    }));
+  };
+
+  const handleSetCaptain = (gameId: number, capName: string) => {
+    updateGame(gameId, { capitao: capName });
+  };
+
+  const handleClearGame = (gameId: number) => {
+    setGames(prev => prev.map(g => g.id === gameId ? {
+      ...g,
+      vencedor: '',
+      clube1: '',
+      clube2: '',
+      golsVencedor: '2',
+      golsPerdedor: '0',
+      golsEmpate: '1',
+      capitao: ''
+    } : g));
+  };
+
+  // Check if a single game is complete
+  const isGameComplete = (g: SingleGameGuess): boolean => {
+    const cap = (g.capitao || '').trim();
+    if (g.tipo === 'vitoria') {
+      const gW = parseInt(g.golsVencedor, 10);
+      const gL = parseInt(g.golsPerdedor, 10);
+      return Boolean(g.vencedor && !isNaN(gW) && !isNaN(gL) && gW > gL && cap);
+    } else {
+      const gE = parseInt(g.golsEmpate, 10);
+      return Boolean(g.clube1 && g.clube2 && g.clube1 !== g.clube2 && !isNaN(gE) && cap);
+    }
+  };
+
+  // Get concise summary string of a game
+  const getGameSummary = (g: SingleGameGuess): string => {
+    if (g.tipo === 'vitoria') {
+      if (!g.vencedor) return 'Pendente';
+      return `${g.vencedor} ${g.golsVencedor}x${g.golsPerdedor}`;
+    } else {
+      if (!g.clube1 || !g.clube2) return 'Pendente';
+      return `${g.clube1} ${g.golsEmpate}x${g.golsEmpate} ${g.clube2}`;
+    }
+  };
+
+  const completedGamesCount = games.filter(isGameComplete).length;
+
+  // Final submission of all 5 guesses
+  const handleFormSubmit = async () => {
     setStatusMsg(null);
 
     if (!nome.trim()) {
-      setStatusMsg({ type: 'error', text: 'Por favor, insira o nome do participante.' });
+      setStatusMsg({ type: 'error', text: 'Por favor, insira ou selecione seu nome de participante.' });
+      return;
+    }
+
+    if (!confirmacaoNome.trim()) {
+      setStatusMsg({ type: 'error', text: 'Por favor, confirme seu nome no segundo campo por segurança.' });
+      return;
+    }
+
+    if (nome.trim().toLowerCase() !== confirmacaoNome.trim().toLowerCase()) {
+      setStatusMsg({ type: 'error', text: 'O nome e a confirmação não coincidem. Digite o mesmo nome em ambos os campos.' });
       return;
     }
 
     if (!activeRound) {
-      setStatusMsg({ type: 'error', text: 'Mercado encerrado. Aguarde a próxima rodada.' });
+      setStatusMsg({ type: 'error', text: 'Mercado encerrado. Aguarde a próxima rodada oficial da Champions.' });
       return;
     }
 
     const nowISO = new Date().toISOString();
     if (nowISO >= activeRound.fechamento || activeRound.status === 'encerrada') {
-      setStatusMsg({ type: 'error', text: 'Mercado encerrado. Aguarde a próxima rodada.' });
+      setStatusMsg({ type: 'error', text: 'Mercado encerrado. O fechamento oficial já ocorreu.' });
       return;
     }
 
@@ -459,860 +389,879 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
     if (!foundParticipant) {
       setStatusMsg({
         type: 'error',
-        text: `O nome "${nome}" não está cadastrado. Por favor, selecione seu nome a partir das sugestões ou contate o Administrador para se cadastrar.`
+        text: `O participante "${nome}" não foi encontrado no cadastro. Selecione seu nome oficial na lista.`
       });
       return;
     }
 
-    const normalizedSelected = nome.replace(/\s+/g, '').toLowerCase();
-    const normalizedConfirm = confirmacaoNome.replace(/\s+/g, '').toLowerCase();
-    
-    if (normalizedSelected !== normalizedConfirm) {
+    // Check submission count limit (max 2)
+    const storageKey = `palpites_count_${foundParticipant.id}_${activeRound.id}`;
+    const localSavedCount = localStorage.getItem(storageKey);
+    let submissionNum = localSavedCount ? parseInt(localSavedCount, 10) + 1 : 1;
+
+    if (submissionNum > 2) {
       setStatusMsg({
         type: 'error',
-        text: 'O nome digitado na confirmação não é igual ao nome selecionado. Certifique-se de preencher o segundo campo com o mesmo nome.'
+        text: 'Você já atingiu o limite máximo de 2 envios permitidos para esta rodada.'
       });
       return;
     }
 
-    // Validate matches selected
-    const filledMatches: MatchGuessLine[] = [];
-    for (let i = 0; i < matchLines.length; i++) {
-      const line = matchLines[i];
-      const hasAny = Boolean(line.timeMandante || line.timeVisitante || line.golsMandante !== '' || line.golsVisitante !== '');
-      if (hasAny) {
-        if (!line.timeMandante || !line.timeVisitante) {
-          setStatusMsg({ type: 'error', text: `No Jogo ${i + 1}, selecione tanto o time mandante quanto o time visitante nas caixinhas.` });
+    // Validate that all 5 games are filled
+    for (const g of games) {
+      const cap = (g.capitao || '').trim();
+      if (g.tipo === 'vitoria') {
+        if (!g.vencedor) {
+          setActiveGameId(g.id);
+          setStatusMsg({ type: 'error', text: `Jogo ${g.id}: Escolha o clube vencedor na lista dos 36 clubes.` });
           return;
         }
-        if (line.timeMandante === line.timeVisitante) {
-          setStatusMsg({ type: 'error', text: `No Jogo ${i + 1}, o time mandante (${line.timeMandante}) não pode jogar contra si mesmo.` });
+        const wScore = parseInt(g.golsVencedor, 10);
+        const lScore = parseInt(g.golsPerdedor, 10);
+        if (isNaN(wScore) || isNaN(lScore) || wScore <= lScore) {
+          setActiveGameId(g.id);
+          setStatusMsg({ type: 'error', text: `Jogo ${g.id}: Em vitória, os gols do vencedor devem ser maiores que os gols do adversário (ex: 2x0, 2x1).` });
           return;
         }
-        if (line.golsMandante === '' || line.golsVisitante === '') {
-          setStatusMsg({ type: 'error', text: `No Jogo ${i + 1} (${line.timeMandante} x ${line.timeVisitante}), selecione os placares de ambos os times nas caixinhas.` });
+        if (!cap) {
+          setActiveGameId(g.id);
+          setStatusMsg({ type: 'error', text: `Jogo ${g.id}: Digite ou clique em um capitão da partida.` });
           return;
         }
-        filledMatches.push(line);
+      } else {
+        if (!g.clube1) {
+          setActiveGameId(g.id);
+          setStatusMsg({ type: 'error', text: `Jogo ${g.id} (Empate): Selecione o 1º clube da partida.` });
+          return;
+        }
+        if (!g.clube2) {
+          setActiveGameId(g.id);
+          setStatusMsg({ type: 'error', text: `Jogo ${g.id} (Empate): Selecione o 2º clube (adversário) da partida.` });
+          return;
+        }
+        if (g.clube1 === g.clube2) {
+          setActiveGameId(g.id);
+          setStatusMsg({ type: 'error', text: `Jogo ${g.id} (Empate): Os dois clubes do empate devem ser diferentes.` });
+          return;
+        }
+        const eScore = parseInt(g.golsEmpate, 10);
+        if (isNaN(eScore) || eScore < 0) {
+          setActiveGameId(g.id);
+          setStatusMsg({ type: 'error', text: `Jogo ${g.id} (Empate): Defina o placar do empate (ex: 1x1, 0x0).` });
+          return;
+        }
+        if (!cap) {
+          setActiveGameId(g.id);
+          setStatusMsg({ type: 'error', text: `Jogo ${g.id}: Digite ou clique em um capitão da partida.` });
+          return;
+        }
       }
     }
 
-    if (filledMatches.length === 0) {
-      setStatusMsg({ type: 'error', text: 'Por favor, selecione os times e placares de pelo menos um jogo usando as caixinhas.' });
+    // Check duplicate teams among win predictions
+    const chosenWinners = games.filter(g => g.tipo === 'vitoria').map(g => g.vencedor);
+    const uniqueWinners = new Set(chosenWinners);
+    if (chosenWinners.length !== uniqueWinners.size) {
+      setStatusMsg({
+        type: 'error',
+        text: 'Você selecionou o mesmo clube vencedor em mais de um jogo. Escolha clubes diferentes para cada vitória.'
+      });
       return;
     }
 
     setSubmitting(true);
     try {
-      const path = 'palpites';
-      let hasSubmission2 = false;
-      let hasSubmission1 = false;
-      const storageKey = `palpites_count_${foundParticipant.id}_${activeRound.id}`;
+      const batch = writeBatch(db);
+      const now = new Date().toISOString();
 
-      try {
-        const q = query(
-          collection(db, path),
+      if (submissionNum === 2) {
+        const qPrev = query(
+          collection(db, 'palpites'),
           where('participante', '==', foundParticipant.nome),
           where('rodada', '==', activeRound.id)
         );
-        const snap = await getDocs(q);
-        snap.forEach(doc => {
-          const d = doc.data();
-          if (d.envio_numero === 2) hasSubmission2 = true;
-          if (d.envio_numero === 1) hasSubmission1 = true;
+        const prevSnap = await getDocs(qPrev);
+        prevSnap.forEach(d => {
+          batch.update(d.ref, { substituido_por_segundo_envio: true });
         });
-      } catch (queryErr) {
-        const savedCount = localStorage.getItem(storageKey);
-        const count = savedCount ? parseInt(savedCount, 10) : 0;
-        if (count >= 2) {
-          hasSubmission2 = true;
-          hasSubmission1 = true;
-        } else if (count === 1) {
-          hasSubmission1 = true;
+      }
+
+      for (const g of games) {
+        const palpiteRef = doc(collection(db, 'palpites'));
+        const cap = (g.capitao || '').trim();
+        
+        if (g.tipo === 'vitoria') {
+          const wGoals = parseInt(g.golsVencedor, 10);
+          const lGoals = parseInt(g.golsPerdedor, 10);
+          
+          batch.set(palpiteRef, {
+            participante: foundParticipant.nome,
+            rodada: activeRound.id,
+            tipo_palpite: 'vitoria',
+            vencedor: g.vencedor,
+            time_mandante: g.vencedor,
+            time_visitante: '',
+            gols_mandante: wGoals,
+            gols_visitante: lGoals,
+            gols_vencedor: wGoals,
+            gols_perdedor: lGoals,
+            palpite: `${g.vencedor} ${wGoals}x${lGoals}`,
+            capitao: cap,
+            data_hora_envio: now,
+            envio_numero: submissionNum
+          });
+        } else {
+          const eGoals = parseInt(g.golsEmpate, 10);
+          
+          batch.set(palpiteRef, {
+            participante: foundParticipant.nome,
+            rodada: activeRound.id,
+            tipo_palpite: 'empate',
+            vencedor: '',
+            time_mandante: g.clube1,
+            time_visitante: g.clube2,
+            gols_mandante: eGoals,
+            gols_visitante: eGoals,
+            palpite: `${g.clube1} ${eGoals} x ${eGoals} ${g.clube2}`,
+            capitao: cap,
+            data_hora_envio: now,
+            envio_numero: submissionNum
+          });
         }
       }
 
-      if (hasSubmission2) {
-        setStatusMsg({
-          type: 'error',
-          text: 'Você já enviou o limite máximo de 2 palpites para esta rodada. Não é possível enviar mais palpites, e o palpite que está valendo é o que você mandou por último.'
-        });
-        addAuditLog(`Tentativa bloqueada: ${foundParticipant.nome} tentou enviar o 3º palpite na ${activeRound.nome}.`, 'ALERTA');
-        setSubmitting(false);
-        return;
-      }
-
-      const submissionNum = hasSubmission1 ? 2 : 1;
-
-      // Save each match to Firestore with both structured and string formats
-      for (const line of filledMatches) {
-        const palpiteText = `${line.timeMandante} ${line.golsMandante} x ${line.golsVisitante} ${line.timeVisitante}`;
-        await addDoc(collection(db, path), {
-          participante: foundParticipant.nome,
-          rodada: activeRound.id,
-          palpite: palpiteText,
-          time_mandante: line.timeMandante,
-          gols_mandante: parseInt(line.golsMandante, 10),
-          time_visitante: line.timeVisitante,
-          gols_visitante: parseInt(line.golsVisitante, 10),
-          capitao: line.capitao.trim(),
-          data_hora_envio: nowISO,
-          envio_numero: submissionNum
-        });
-      }
+      await batch.commit();
 
       localStorage.setItem(storageKey, String(submissionNum));
       setSubmissionCount(submissionNum);
 
-      const nowTime = new Date();
-      const hms = `${String(nowTime.getHours()).padStart(2, '0')}:${String(nowTime.getMinutes()).padStart(2, '0')}:${String(nowTime.getSeconds()).padStart(2, '0')}`;
-
-      setStatusMsg({ 
-        type: 'success', 
-        text: `Palpites registrados com sucesso! ${submissionNum === 2 ? 'Este é o seu 2º envio (ele substituirá o 1º na apuração).' : 'Este é o seu 1º envio.'}` 
-      });
-
-      if (submissionNum === 1) {
-        addAuditLog(`Primeiro palpite de ${foundParticipant.nome} registrado para a ${activeRound.nome} às ${hms} (${filledMatches.length} jogos).`, 'SUCESSO');
-      } else {
-        addAuditLog(`Palpite alterado por ${foundParticipant.nome} para a ${activeRound.nome} às ${hms} (2º envio de segurança que substitui o anterior).`, 'INFO');
-      }
-
-      // Clear draft storage on successful submission
       try {
-        localStorage.removeItem(DRAFT_STORAGE_KEY);
-      } catch (e) {}
+        const gSnap = await getDocs(query(collection(db, 'palpites'), where('rodada', '==', activeRound.id)));
+        const gList: Palpite[] = [];
+        gSnap.forEach(d => gList.push({ id: d.id, ...d.data() } as Palpite));
+        setAllRoundGuesses(gList);
+      } catch {}
 
-      // Reset match rows to clean defaults
-      setMatchLines([
-        { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '', capitao: '' },
-        { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '', capitao: '' },
-        { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '', capitao: '' },
-        { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '', capitao: '' },
-        { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '', capitao: '' }
-      ]);
+      localStorage.removeItem(DRAFT_STORAGE_KEY);
+
+      setStatusMsg({
+        type: 'success',
+        text: `Parabéns! Seus 5 palpites foram gravados com sucesso! ${submissionNum === 2 ? 'Este é seu 2º envio oficial (substituirá o 1º na apuração).' : 'Este é seu 1º envio oficial da rodada.'}`
+      });
     } catch (err: any) {
-      console.error(err);
-      setStatusMsg({ type: 'error', text: 'Erro ao registrar palpite. Verifique se o mercado está aberto.' });
-      addAuditLog(`Erro ao salvar palpites de ${nome}: ${err?.message || err}`, 'ALERTA');
+      console.error("Submission error in PalpitesPage:", err);
+      setStatusMsg({ type: 'error', text: `Erro ao enviar palpites: ${err?.message || err}` });
     } finally {
       setSubmitting(false);
     }
   };
 
-  // Group guesses of closed round
-  const groupedGuesses: Record<string, Palpite[]> = closedRoundGuesses.reduce((acc, curr) => {
-    if (!acc[curr.participante]) {
-      acc[curr.participante] = [];
-    }
-    acc[curr.participante].push(curr);
-    return acc;
-  }, {} as Record<string, Palpite[]>);
+  const submittedCountForActiveRound = new Set(allRoundGuesses.map(g => g.participante)).size;
+  const currentGame = games.find(g => g.id === activeGameId) || games[0];
 
-  const targetClosedRound = rounds.find(r => r.id === selectedClosedRound) || closedRounds[0];
+  // Helper render for a single game card
+  const renderGameContent = (g: SingleGameGuess) => {
+    const isWin = g.tipo === 'vitoria';
+    const complete = isGameComplete(g);
 
-  return (
-    <div className="space-y-8">
-      {/* Title block with Champions League cyan/blue accent */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-cyan-500/20 pb-4 gap-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-[10px] tracking-[0.2em] font-black text-cyan-400 uppercase font-mono">
-              UEFA CHAMPIONS LEAGUE
-            </span>
-            <span className="text-slate-600">·</span>
-            <span className="text-[10px] font-mono text-slate-400 tracking-wider uppercase font-semibold">
-              MATCHDAY DA COMPETIÇÃO
-            </span>
+    return (
+      <div className="space-y-2.5">
+        {/* Top: Mode Switcher */}
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-1 bg-[#030617] p-0.5 rounded-lg border border-cyan-900/60 text-xs font-bold">
+            <button
+              type="button"
+              onClick={() => handleToggleTipo(g.id, 'vitoria')}
+              className={`px-2.5 py-1 rounded-md transition-all cursor-pointer flex items-center gap-1 ${
+                isWin 
+                  ? 'bg-cyan-500 text-white font-black shadow-xs' 
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Trophy className="w-3 h-3" />
+              <span>Vitória de um Clube</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleToggleTipo(g.id, 'empate')}
+              className={`px-2.5 py-1 rounded-md transition-all cursor-pointer flex items-center gap-1 ${
+                !isWin 
+                  ? 'bg-indigo-600 text-white font-black shadow-xs' 
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <span>🤝 Empate</span>
+            </button>
           </div>
-          <h1 className="text-2xl font-black tracking-tight text-white uppercase flex items-center gap-2.5 font-display drop-shadow-sm">
-            <div className="w-2.5 h-6 bg-gradient-to-b from-cyan-400 to-blue-600 rounded-xs shadow-xs" />
-            {activeRound ? `Palpites Oficiais - ${activeRound.nome}` : 'Mercado Fechado - Apuração dos Placares'}
-          </h1>
-          <p className="text-xs text-slate-400 mt-1 uppercase tracking-wider font-semibold font-mono">
-            36 Clubes Europeus • 5 Jogos Fixos • Fechamento Oficial: Terça-feira às 13:00
-          </p>
+
+          {(g.vencedor || g.clube1 || g.capitao) && (
+            <button
+              type="button"
+              onClick={() => handleClearGame(g.id)}
+              className="text-[11px] text-slate-400 hover:text-rose-400 transition-colors cursor-pointer flex items-center gap-1 font-mono"
+              title="Limpar este jogo"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>Limpar</span>
+            </button>
+          )}
         </div>
 
-        {/* Status indicator Champions League */}
-        {activeRound ? (
-          <div className="flex items-center gap-2">
-            {(activeRound.is_test || activeRound.id === 'rodada-teste') && (
-              <span className="bg-purple-950/80 border border-purple-500/50 text-purple-300 px-3 py-1 rounded-full text-xs font-black uppercase flex items-center gap-1.5 animate-pulse">
-                🧪 MODO TESTE
-              </span>
-            )}
-            <div className="bg-[#05193d] border border-cyan-400/40 text-cyan-300 px-4 py-1.5 rounded-full text-xs font-black flex items-center gap-2 tracking-wide uppercase shrink-0 shadow-lg shadow-cyan-950/40">
-              <UclStarball className="w-3.5 h-3.5 text-cyan-400 animate-spin" glow />
-              <span>MERCADO ABERTO</span>
-              <span className="animate-pulse h-2 w-2 bg-cyan-400 rounded-full"></span>
+        {/* SECTION: SE VITÓRIA */}
+        {isWin ? (
+          <div className="space-y-2">
+            <div>
+              <label className="block text-[10px] font-black uppercase tracking-wider text-cyan-200 mb-0.5 font-mono">
+                Clube Vencedor (escolha entre os 36 clubes) *
+              </label>
+              <select
+                value={g.vencedor}
+                onChange={(e) => handleSelectWinner(g.id, e.target.value)}
+                className="w-full bg-[#030617] border border-cyan-700/60 text-white font-bold text-sm sm:text-xs rounded-lg px-2.5 py-1.5 focus:outline-hidden focus:ring-1 focus:ring-cyan-400 transition-colors"
+              >
+                <option value="">-- Selecione o clube vencedor --</option>
+                {TEAMS_LIST.map((team) => (
+                  <option key={team} value={team}>
+                    🏆 {team}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Placar da Vitória Compacto */}
+            <div className="p-2 rounded-lg bg-[#03071d] border border-cyan-900/60 space-y-1.5">
+              <div className="flex items-center justify-between flex-wrap gap-1">
+                <span className="text-[10px] font-bold text-slate-300 font-mono">
+                  Placar da Vitória:
+                </span>
+                {g.vencedor && (
+                  <span className="text-[10px] font-black font-mono text-cyan-300 bg-cyan-950/90 px-1.5 py-0.5 rounded border border-cyan-500/30">
+                    {g.vencedor} {g.golsVencedor} x {g.golsPerdedor}
+                  </span>
+                )}
+              </div>
+
+              {/* Quick score presets */}
+              <div className="flex items-center gap-1 flex-wrap">
+                <span className="text-[9px] text-slate-400 font-mono">Atalhos:</span>
+                {WIN_PRESETS.map((p) => {
+                  const [w, l] = p.split('x');
+                  const isSelected = g.golsVencedor === w && g.golsPerdedor === l;
+                  return (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => handleApplyWinPreset(g.id, p)}
+                      className={`px-1.5 py-0.5 rounded text-[11px] font-mono font-bold transition-all cursor-pointer border ${
+                        isSelected
+                          ? 'bg-cyan-500 text-white border-cyan-300 font-black'
+                          : 'bg-[#060e2b] text-cyan-200 border-cyan-800/60 hover:bg-cyan-900/60'
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  );
+                })}
+
+                {/* Micro Stepper */}
+                <div className="flex items-center gap-2 ml-auto text-[10px] font-mono text-slate-300">
+                  <div className="flex items-center bg-[#071138] rounded border border-cyan-800/60 px-1">
+                    <span className="text-slate-400 mr-1 text-[9px]">Venc:</span>
+                    <button
+                      type="button"
+                      onClick={() => handleStepScore(g.id, 'golsVencedor', -1)}
+                      className="w-4 h-4 text-slate-300 hover:text-white cursor-pointer font-black"
+                    >
+                      -
+                    </button>
+                    <span className="w-4 text-center font-bold text-white text-xs">{g.golsVencedor}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleStepScore(g.id, 'golsVencedor', 1)}
+                      className="w-4 h-4 text-slate-300 hover:text-white cursor-pointer font-black"
+                    >
+                      +
+                    </button>
+                  </div>
+                  <div className="flex items-center bg-[#071138] rounded border border-cyan-800/60 px-1">
+                    <span className="text-slate-400 mr-1 text-[9px]">Adv:</span>
+                    <button
+                      type="button"
+                      onClick={() => handleStepScore(g.id, 'golsPerdedor', -1)}
+                      className="w-4 h-4 text-slate-300 hover:text-white cursor-pointer font-black"
+                    >
+                      -
+                    </button>
+                    <span className="w-4 text-center font-bold text-white text-xs">{g.golsPerdedor}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleStepScore(g.id, 'golsPerdedor', 1)}
+                      className="w-4 h-4 text-slate-300 hover:text-white cursor-pointer font-black"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         ) : (
-          <div className="bg-[#240c1a] border border-rose-500/40 text-rose-300 px-4 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 tracking-wide uppercase shrink-0 shadow-sm">
-            <Lock className="w-3.5 h-3.5 text-rose-400" />
-            <span>MERCADO ENCERRADO (TERÇA 13H)</span>
+          /* SECTION: SE EMPATE */
+          <div className="space-y-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-wider text-cyan-200 mb-0.5 font-mono">
+                  1º Clube *
+                </label>
+                <select
+                  value={g.clube1}
+                  onChange={(e) => updateGame(g.id, { clube1: e.target.value })}
+                  className="w-full bg-[#030617] border border-cyan-700/60 text-white font-bold text-sm sm:text-xs rounded-lg px-2.5 py-1.5 focus:outline-hidden focus:ring-1 focus:ring-cyan-400 transition-colors"
+                >
+                  <option value="">-- 1º clube --</option>
+                  {TEAMS_LIST.map((team) => (
+                    <option key={team} value={team}>
+                      {team}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-wider text-cyan-200 mb-0.5 font-mono">
+                  2º Clube (Adversário) *
+                </label>
+                <select
+                  value={g.clube2}
+                  onChange={(e) => updateGame(g.id, { clube2: e.target.value })}
+                  className="w-full bg-[#030617] border border-cyan-700/60 text-white font-bold text-sm sm:text-xs rounded-lg px-2.5 py-1.5 focus:outline-hidden focus:ring-1 focus:ring-cyan-400 transition-colors"
+                >
+                  <option value="">-- 2º clube adversário --</option>
+                  {TEAMS_LIST.filter(t => t !== g.clube1).map((team) => (
+                    <option key={team} value={team}>
+                      {team}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Placar Empate */}
+            <div className="p-2 rounded-lg bg-[#03071d] border border-cyan-900/60 space-y-1.5">
+              <div className="flex items-center justify-between flex-wrap gap-1">
+                <span className="text-[10px] font-bold text-slate-300 font-mono">
+                  Placar do Empate:
+                </span>
+                {g.clube1 && g.clube2 && (
+                  <span className="text-[10px] font-black font-mono text-cyan-300 bg-cyan-950/90 px-1.5 py-0.5 rounded border border-cyan-500/30">
+                    {g.clube1} {g.golsEmpate} x {g.golsEmpate} {g.clube2}
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-1 flex-wrap">
+                <span className="text-[9px] text-slate-400 font-mono">Atalhos:</span>
+                {DRAW_PRESETS.map((p) => {
+                  const [e] = p.split('x');
+                  const isSelected = g.golsEmpate === e;
+                  return (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => handleApplyDrawPreset(g.id, p)}
+                      className={`px-1.5 py-0.5 rounded text-[11px] font-mono font-bold transition-all cursor-pointer border ${
+                        isSelected
+                          ? 'bg-indigo-600 text-white border-indigo-400 font-black'
+                          : 'bg-[#060e2b] text-cyan-200 border-cyan-800/60 hover:bg-cyan-900/60'
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  );
+                })}
+
+                <div className="flex items-center bg-[#071138] rounded border border-cyan-800/60 px-1 ml-auto">
+                  <span className="text-slate-400 mr-1 text-[9px] font-mono">Gols:</span>
+                  <button
+                    type="button"
+                    onClick={() => handleStepScore(g.id, 'golsEmpate', -1)}
+                    className="w-4 h-4 text-slate-300 hover:text-white cursor-pointer font-black"
+                  >
+                    -
+                  </button>
+                  <span className="w-4 text-center font-bold text-white text-xs font-mono">{g.golsEmpate}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleStepScore(g.id, 'golsEmpate', 1)}
+                    className="w-4 h-4 text-slate-300 hover:text-white cursor-pointer font-black"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* CAPITÃO DA PARTIDA - Bulletproof: 16px font on mobile prevents iOS zoom jump, zero-crash string handling */}
+        <div className="pt-2 border-t border-cyan-950/80 space-y-1">
+          <div className="flex items-center justify-between">
+            <label 
+              htmlFor={`capitao-input-${g.id}`}
+              className="text-[10px] font-black uppercase tracking-wider text-amber-300 font-mono flex items-center gap-1"
+            >
+              <Star className="w-3 h-3 text-amber-400 fill-amber-400" />
+              Capitão do Jogo (1 pt por gol) *
+            </label>
+            {(g.capitao || '').trim() && (
+              <span className="text-[10px] text-amber-300 font-mono font-bold">
+                ★ {g.capitao}
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              id={`capitao-input-${g.id}`}
+              type="text"
+              placeholder="Digite o nome do capitão..."
+              value={g.capitao || ''}
+              onChange={(e) => handleSetCaptain(g.id, e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              onFocus={(e) => e.stopPropagation()}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }
+              }}
+              autoComplete="off"
+              spellCheck={false}
+              className="flex-1 bg-[#030617] border border-cyan-800/60 rounded-lg px-2.5 py-1.5 text-base sm:text-xs text-white font-bold placeholder:text-slate-500 focus:outline-hidden focus:ring-1 focus:ring-amber-400 transition-colors"
+            />
+          </div>
+
+          {/* Quick captain suggestion chips */}
+          <div className="flex items-center gap-1 flex-wrap pt-0.5">
+            <span className="text-[9px] text-slate-400 font-mono">Sugestões:</span>
+            {STAR_CAPTAINS.map((cap) => {
+              const isCapSelected = (g.capitao || '').toLowerCase().trim() === cap.toLowerCase();
+              return (
+                <button
+                  key={cap}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleSetCaptain(g.id, cap);
+                  }}
+                  className={`px-1.5 py-0.5 rounded text-[10px] font-bold font-mono transition-colors cursor-pointer border ${
+                    isCapSelected
+                      ? 'bg-amber-500 text-slate-950 font-black border-amber-300'
+                      : 'bg-[#060e2b] text-slate-300 hover:text-white border-cyan-900/60 hover:bg-cyan-900/40'
+                  }`}
+                >
+                  {cap}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="w-full max-w-2xl mx-auto space-y-3 pb-10 relative overflow-x-hidden">
+      {/* Lateral Drawer Component */}
+      <RoundInfoDrawer
+        isOpen={isDrawerOpen}
+        onClose={() => setIsDrawerOpen(false)}
+        activeRound={activeRound}
+        participantes={participantes}
+        palpites={allRoundGuesses}
+        closedRounds={closedRounds}
+        allRounds={rounds}
+      />
+
+      {/* Floating Lateral Tab Trigger Button (Desktop only - mobile uses Header button) */}
+      <button
+        type="button"
+        onClick={() => setIsDrawerOpen(true)}
+        className="hidden md:flex fixed right-0 top-1/2 -translate-y-1/2 z-40 bg-[#071138]/95 hover:bg-[#0c1c5a] border-l-2 border-y border-cyan-400/60 text-white rounded-l-2xl shadow-2xl shadow-cyan-950/80 px-2 py-3 flex-col items-center gap-1 cursor-pointer transition-all hover:translate-x-[-2px] group"
+        title="Abrir painel lateral com quem palpitou, palpites revelados e pontuações"
+      >
+        <Users className="w-3.5 h-3.5 text-cyan-300 group-hover:scale-110 transition-transform" />
+        <span className="text-[9px] font-black font-mono uppercase tracking-widest [writing-mode:vertical-rl] text-cyan-200">
+          PAINEL DA RODADA
+        </span>
+        <span className="text-[8px] font-mono font-bold bg-cyan-950 text-cyan-300 border border-cyan-500/40 rounded-full px-1 py-0.2 mt-0.5">
+          {submittedCountForActiveRound}/{participantes.length}
+        </span>
+      </button>
+
+      {/* Header Bar - Super Compact */}
+      <div className="bg-[#080f33]/90 rounded-xl border border-cyan-500/25 p-2.5 sm:p-3 shadow-lg backdrop-blur-md flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-2">
+          <UclStarball className="w-5 h-5 text-cyan-400 shrink-0" glow />
+          <div>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-xs sm:text-sm font-black font-display text-white tracking-tight">
+                {activeRound?.nome || 'Rodada Oficial'}
+              </span>
+              {activeRound?.status === 'aberta' ? (
+                <span className="px-1.5 py-0.2 rounded-full text-[9px] font-black uppercase bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 font-mono">
+                  ● Aberto
+                </span>
+              ) : (
+                <span className="px-1.5 py-0.2 rounded-full text-[9px] font-black uppercase bg-rose-950/80 text-rose-300 border border-rose-500/40 font-mono">
+                  ● Fechado
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          {activeRound && activeRound.status === 'aberta' && (
+            <div className="flex items-center gap-1.5 bg-[#050e2e] px-2 py-0.5 rounded-lg border border-cyan-500/30">
+              <span className="hidden sm:inline text-[10px] font-mono text-cyan-300 font-bold">
+                {getFriendlyClosingLabel(activeRound.fechamento)}:
+              </span>
+              <RoundCountdown fechamento={activeRound.fechamento} />
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setIsDrawerOpen(true)}
+            className="px-2.5 py-1 bg-[#0a164a] hover:bg-[#0e206b] border border-cyan-400/40 rounded-lg text-[11px] font-bold text-white flex items-center gap-1 transition-all cursor-pointer"
+            title="Abrir painel lateral"
+          >
+            <Users className="w-3 h-3 text-cyan-300" />
+            <span className="hidden sm:inline">Painel</span> ({submittedCountForActiveRound}/{participantes.length})
+          </button>
+        </div>
+      </div>
+
+      {/* Closed Market Notice */}
+      {(!activeRound || activeRound.status !== 'aberta') && (
+        <div className="bg-[#080f33]/90 rounded-xl border border-rose-500/40 p-3 shadow-lg flex items-center gap-2.5 text-xs text-rose-200">
+          <Lock className="w-4 h-4 text-rose-400 shrink-0" />
+          <span>
+            <strong>Mercado Fechado:</strong> O mercado fecha às terças e quartas às 13:00 e abre automaticamente assim que o Administrador atualizar os resultados oficiais da rodada! (Nas semanas sem jogos, reabre na quinta-feira à meia-noite).
+          </span>
+        </div>
+      )}
+
+      {/* Participant Identification Section - Compact Horizontal */}
+      <div className="bg-[#080f33]/90 rounded-xl border border-cyan-500/25 p-2.5 sm:p-3 shadow-lg backdrop-blur-md">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div className="relative">
+            <label htmlFor="input-nome-participante" className="block text-[10px] font-black uppercase tracking-wider text-slate-300 mb-0.5 font-mono">
+              1. Seu Nome *
+            </label>
+            <input
+              id="input-nome-participante"
+              type="text"
+              placeholder="Digite seu nome cadastrado..."
+              value={nome}
+              onChange={(e) => {
+                setNome(e.target.value);
+                setShowSuggestions(true);
+              }}
+              onFocus={() => setShowSuggestions(true)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }
+              }}
+              autoComplete="off"
+              spellCheck={false}
+              className="w-full border border-cyan-800/60 px-2.5 py-1.5 rounded-lg text-base sm:text-xs bg-[#04081c] focus:outline-hidden focus:ring-1 focus:ring-cyan-400 font-bold text-white placeholder:text-slate-500 transition-colors"
+            />
+
+            {showSuggestions && suggestions.length > 0 && (
+              <ul className="absolute z-30 left-0 right-0 mt-1 bg-[#060c28] border border-cyan-500/40 rounded-xl shadow-2xl max-h-40 overflow-y-auto divide-y divide-cyan-950 text-xs">
+                {suggestions.map((p) => (
+                  <li
+                    key={p.id}
+                    onClick={() => handleSelectSuggestion(p.nome)}
+                    className="p-1.5 hover:bg-cyan-950/60 cursor-pointer flex justify-between items-center transition-colors font-bold text-slate-200"
+                  >
+                    <span>{p.nome}</span>
+                    <span className="text-[10px] bg-cyan-950 text-cyan-300 font-mono px-1.5 py-0.2 rounded-full border border-cyan-700/60 font-bold">
+                      {p.pontos} Pts
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div>
+            <label htmlFor="input-confirmacao-nome" className="block text-[10px] font-black uppercase tracking-wider text-slate-300 mb-0.5 font-mono flex items-center justify-between">
+              <span>2. Confirmar Nome *</span>
+              <span className="text-[9px] text-amber-400 font-bold">(segurança)</span>
+            </label>
+            <input
+              id="input-confirmacao-nome"
+              type="text"
+              placeholder="Digite o mesmo nome..."
+              value={confirmacaoNome}
+              onChange={(e) => setConfirmacaoNome(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }
+              }}
+              autoComplete="off"
+              spellCheck={false}
+              className="w-full border border-cyan-800/60 px-2.5 py-1.5 rounded-lg text-base sm:text-xs bg-[#04081c] focus:outline-hidden focus:ring-1 focus:ring-cyan-400 font-bold text-white placeholder:text-slate-500 transition-colors"
+            />
+          </div>
+        </div>
+
+        {submissionCount > 0 && (
+          <div className="mt-2 p-1.5 rounded-lg bg-cyan-950/60 border border-cyan-500/30 text-[10px] text-cyan-200 flex items-center gap-1.5 font-mono">
+            <Info className="w-3 h-3 text-cyan-400 shrink-0" />
+            <span>
+              {submissionCount === 1 
+                ? 'Você já possui 1 envio registrado. Este será seu 2º e último envio.' 
+                : 'Limite de 2 envios atingido para esta rodada.'}
+            </span>
           </div>
         )}
       </div>
 
-      {/* Mercado Countdown Banner - Champions League Stadium Night */}
-      {activeRound && timeLeft && (
-        <div className="relative overflow-hidden bg-gradient-to-r from-[#0d1746] via-[#070e30] to-[#040922] border border-cyan-500/30 text-white rounded-2xl p-5 shadow-xl flex flex-col md:flex-row justify-between items-center gap-4 transition-all duration-300">
-          {/* Subtle starball watermark inside banner */}
-          <div className="absolute right-[-40px] top-[-30px] w-48 h-48 opacity-10 text-cyan-300 pointer-events-none">
-            <UclStarball className="w-full h-full" />
-          </div>
-
-          <div className="flex items-center gap-3.5 z-10">
-            <div className="p-3 bg-[#0a1645] rounded-xl border border-cyan-500/40 text-cyan-300 shadow-md">
-              <Clock className="w-6 h-6 text-cyan-400" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-black text-cyan-400 uppercase tracking-widest font-mono">
-                  CONTAGEM REGRESSIVA OFICIAL
-                </span>
-              </div>
-              <h3 className="font-black text-sm uppercase tracking-wide flex items-center gap-1.5 text-white font-display">
-                {(activeRound.is_test || activeRound.id === 'rodada-teste') ? 'Rodada de Teste Ativa (Controle Manual):' : 'O Mercado se encerra em:'}
-              </h3>
-              <p className="text-[10.5px] text-slate-300 font-semibold uppercase tracking-wider font-mono mt-0.5">
-                {(activeRound.is_test || activeRound.id === 'rodada-teste')
-                  ? 'Abertura e fechamento manuais pela administração'
-                  : `Fechamento: ${formatDateTimeDisplay(activeRound.fechamento)} (Terça-feira às 13:00)`
-                }
-              </p>
-            </div>
-          </div>
-          
-          <div className="flex gap-2 z-10">
-            {[
-              { label: 'DIAS', value: timeLeft.days },
-              { label: 'HORAS', value: timeLeft.hours },
-              { label: 'MINUTOS', value: timeLeft.minutes },
-              { label: 'SEGUNDOS', value: timeLeft.seconds }
-            ].map((item, id) => (
-              <div key={id} className="flex flex-col items-center bg-[#050b28]/90 border border-cyan-500/35 p-2.5 rounded-xl min-w-[70px] shadow-inner backdrop-blur-xs">
-                <span className="text-xl font-black font-mono tracking-tight text-cyan-300 drop-shadow-[0_0_8px_rgba(0,240,255,0.4)]">
-                  {String(item.value).padStart(2, '0')}
-                </span>
-                <span className="text-[8px] font-bold text-slate-400 mt-0.5 tracking-widest">{item.label}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* When Market is Closed: Informative Banner */}
-      {!activeRound && (
-        <div className="bg-gradient-to-r from-[#170a24] via-[#090d29] to-[#04081c] border border-cyan-500/30 text-white rounded-2xl p-6 sm:p-8 flex flex-col md:flex-row items-center justify-between gap-6 shadow-xl">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 bg-rose-500/20 border border-rose-500/40 rounded-2xl flex items-center justify-center shrink-0">
-              <Lock className="w-7 h-7 text-rose-400" />
-            </div>
-            <div>
-              <span className="text-rose-400 text-xs font-black tracking-widest uppercase block font-mono">
-                RODADA FINALIZADA • MERCADO FECHADO
-              </span>
-              <h2 className="text-xl sm:text-2xl font-black font-display tracking-tight uppercase mt-0.5 text-white">
-                Aguardando Apuração Oficial da Champions
-              </h2>
-              <p className="text-xs text-slate-300 font-medium mt-1.5 max-w-2xl leading-relaxed">
-                O mercado foi fechado na <strong className="text-cyan-300">terça-feira às 13:00</strong>. Somente após o fechamento os palpites são revelados. O mercado da próxima rodada abrirá automaticamente assim que os placares oficiais dos jogos forem lançados!
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Main dashboard body with 2 columns */}
-      <div className="flex flex-col lg:flex-row gap-6">
-        {/* Left main form section - 2/3 width */}
-        <section className="flex-1 lg:w-2/3 bg-[#080f33]/90 border border-cyan-500/25 rounded-2xl shadow-2xl p-6 flex flex-col backdrop-blur-md">
-          <div className="border-b border-cyan-500/15 pb-4 mb-5">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-4 bg-gradient-to-b from-cyan-400 to-blue-600 rounded-xs" />
-              <h2 className="text-lg font-black text-white uppercase tracking-tight font-display flex items-center gap-2">
-                {activeRound ? 'Palpites da Champions League' : 'Status do Mercado'}
-              </h2>
-            </div>
-            <p className="text-slate-400 text-xs mt-1 uppercase tracking-wider font-semibold font-mono">
-              {activeRound 
-                ? 'Selecione os confrontos europeus e utilize os atalhos de placares rápidos.' 
-                : 'O mercado está fechado no momento. Veja a tabela de quem palpitou abaixo.'}
-            </p>
-          </div>
-
-          {!activeRound ? (
-            <div className="py-6 space-y-4">
-              <div className="p-4 bg-amber-950/40 border border-amber-500/40 rounded-xl text-amber-200 text-xs font-medium flex items-center gap-2.5">
-                <AlertCircle className="w-5 h-5 text-amber-400 shrink-0" />
-                <span>
-                  O envio de palpites está bloqueado. O mercado abrirá automaticamente quando os placares forem atualizados.
-                </span>
-              </div>
-              {targetClosedRound && (
-                <div className="pt-2">
-                  <TabelaParticipacao
-                    round={targetClosedRound}
-                    participantes={participantes}
-                    palpites={closedRoundGuesses}
-                    isMarketClosed={true}
-                  />
-                </div>
-              )}
-            </div>
-          ) : (
-            <>
-
-          {/* Participant Identification Fields */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-            <div className="relative">
-              <label htmlFor="input-nome-participante" className="block text-xs font-black uppercase tracking-wider text-slate-300 mb-1 flex items-center gap-1 font-mono">
-                <span>Nome do Participante *</span>
-              </label>
-              <input
-                id="input-nome-participante"
-                type="text"
-                placeholder="Selecione ou digite seu nome..."
-                value={nome}
-                onChange={(e) => {
-                  setNome(e.target.value);
-                  setShowSuggestions(true);
-                }}
-                onFocus={() => setShowSuggestions(true)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') e.preventDefault();
-                }}
-                className="w-full border border-cyan-800/60 p-3 rounded-xl text-sm bg-[#050a24] focus:bg-[#070e30] focus:outline-hidden focus:ring-1 focus:ring-cyan-400 font-bold text-white placeholder:text-slate-500 transition-colors shadow-inner"
-              />
-
-              {showSuggestions && suggestions.length > 0 && (
-                <ul className="absolute z-50 left-0 right-0 mt-1 bg-[#060c28] border border-cyan-500/40 rounded-xl shadow-2xl max-h-48 overflow-y-auto divide-y divide-cyan-950/80 text-sm">
-                  {suggestions.map((p) => (
-                    <li
-                      key={p.id}
-                      onClick={() => handleSelectSuggestion(p.nome)}
-                      className="p-3 hover:bg-cyan-950/60 cursor-pointer flex justify-between items-center transition-colors font-bold text-slate-200"
-                    >
-                      <span className="flex items-center gap-2">
-                        <UclStarball className="w-3.5 h-3.5 text-cyan-400" />
-                        {p.nome}
-                      </span>
-                      <span className="text-[10px] bg-cyan-950 text-cyan-300 font-mono px-2 py-0.5 rounded-full border border-cyan-700/60 font-bold">
-                        {p.pontos} Pts
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            <div>
-              <label htmlFor="input-confirmacao-nome" className="block text-xs font-black uppercase tracking-wider text-slate-300 mb-1 flex items-center justify-between font-mono">
-                <span>Confirmar Nome *</span>
-                <span className="text-[10px] text-amber-400 font-bold lowercase">(digite manualmente)</span>
-              </label>
-              <input
-                id="input-confirmacao-nome"
-                type="text"
-                placeholder="Digite seu nome exatamente como selecionado..."
-                value={confirmacaoNome}
-                onChange={(e) => setConfirmacaoNome(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') e.preventDefault();
-                }}
-                className="w-full border border-cyan-800/60 p-3 rounded-xl text-sm bg-[#050a24] focus:bg-[#070e30] focus:outline-hidden focus:ring-1 focus:ring-cyan-400 font-bold text-white placeholder:text-slate-500 transition-colors shadow-inner"
-              />
-            </div>
-          </div>
-
-          {/* Submission status banner */}
-          {submissionCount > 0 && (
-            <div className={`p-4 mb-5 border rounded-xl text-xs flex items-start gap-3 transition-all ${
-              submissionCount === 1 
-                ? 'bg-amber-950/40 border-amber-500/40 text-amber-200' 
-                : 'bg-cyan-950/50 border-cyan-500/40 text-cyan-200 font-semibold'
+      {/* GAME SELECTOR TABS BAR - Eliminates scrolling! Fast 1-tap game switching */}
+      <div className="bg-[#080f33]/90 rounded-xl border border-cyan-500/25 p-2 shadow-lg backdrop-blur-md">
+        <div className="flex items-center justify-between gap-1 mb-1.5 px-0.5">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] font-black uppercase text-white font-mono flex items-center gap-1">
+              <Sparkles className="w-3 h-3 text-cyan-400" />
+              5 Jogos da Rodada
+            </span>
+            <span className={`px-1.5 py-0.2 rounded text-[10px] font-black font-mono border ${
+              completedGamesCount === 5 
+                ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40' 
+                : 'bg-amber-950/80 text-amber-300 border-amber-500/40'
             }`}>
-              <Info className={`w-5 h-5 shrink-0 ${submissionCount === 1 ? 'text-amber-400' : 'text-cyan-400'}`} />
-              <div className="flex-1">
-                <p className="font-bold mb-0.5">
-                  {submissionCount === 1 
-                    ? '1º Envio Registrado!' 
-                    : 'Limite Máximo Atingido!'
-                  }
-                </p>
-                <p className="opacity-90 leading-relaxed">
-                  {submissionCount === 1 
-                    ? 'Você já registrou 1 palpite para esta rodada. Se desejar alterá-lo, escolha os novos placares abaixo e envie. Este será o seu 2º envio, que substituirá o anterior.' 
-                    : 'Você já enviou os 2 palpites permitidos para esta rodada. Suas escolhas estão consolidadas. O último envio é o que está valendo para a avaliação.'
-                  }
-                </p>
-              </div>
-            </div>
-          )}
+              {completedGamesCount}/5 prontos
+            </span>
+          </div>
 
-          <div className="space-y-3.5 flex flex-col flex-1">
-            {/* Reassuring Autosave Banner */}
-            <div className="bg-[#050e30]/90 border border-cyan-500/30 rounded-xl px-3.5 py-2 flex items-center justify-between gap-2 text-[11px] text-cyan-200 font-mono">
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#10b981] shrink-0"></span>
-                <span>Rascunho seguro: preencha os 5 jogos e capitães. Nada se perde ao atualizar a página e o envio só ocorre quando você clicar em &quot;ENVIAR PALPITE DA CHAMPIONS&quot; ao final.</span>
-              </div>
-            </div>
+          {/* Toggle between single-game tab mode (no scrolling) and expanded all view */}
+          <div className="flex items-center gap-0.5 bg-[#030617] p-0.5 rounded border border-cyan-900/60">
+            <button
+              type="button"
+              onClick={() => setViewMode('tabs')}
+              className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold transition-colors cursor-pointer flex items-center gap-0.5 ${
+                viewMode === 'tabs' ? 'bg-cyan-500 text-white font-black' : 'text-slate-400 hover:text-white'
+              }`}
+              title="Modo Focado (Sem rolar a tela)"
+            >
+              <ListFilter className="w-2.5 h-2.5" />
+              <span>Focado</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('all')}
+              className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold transition-colors cursor-pointer flex items-center gap-0.5 ${
+                viewMode === 'all' ? 'bg-cyan-500 text-white font-black' : 'text-slate-400 hover:text-white'
+              }`}
+              title="Ver Todos os 5 Jogos juntos"
+            >
+              <LayoutGrid className="w-2.5 h-2.5" />
+              <span>Todos</span>
+            </button>
+          </div>
+        </div>
 
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1 pb-1">
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] font-black uppercase tracking-wider text-cyan-300 flex items-center gap-1.5 font-mono">
-                  <UclStarball className="w-3 h-3 text-cyan-400" />
-                  Os 5 Jogos da Champions
-                </span>
-                <span className="text-[10px] font-black uppercase tracking-wider text-cyan-300 bg-cyan-950/80 border border-cyan-600/40 px-2.5 py-0.5 rounded-full font-mono">
-                  5 Jogos Fixos
-                </span>
-              </div>
+        {/* 5 Segmented Buttons */}
+        <div className="grid grid-cols-5 gap-1">
+          {games.map((g) => {
+            const complete = isGameComplete(g);
+            const isSelected = activeGameId === g.id && viewMode === 'tabs';
 
-              {/* Atalhos Globais Rápidos */}
-              <div className="flex items-center gap-1.5 text-[10px] text-slate-400 flex-wrap">
-                <span className="font-bold text-slate-500">Atalhos gerais:</span>
-                {[
-                  { label: 'Todos 2x1', m: '2', v: '1' },
-                  { label: 'Todos 1x0', m: '1', v: '0' },
-                  { label: 'Todos 1x1', m: '1', v: '1' }
-                ].map(p => (
-                  <button
-                    key={p.label}
-                    type="button"
-                    onClick={() => handleApplyPresetToAllMatches(p.m, p.v)}
-                    disabled={!activeRound}
-                    className="px-2 py-0.5 rounded-md bg-[#0a1442] hover:bg-cyan-500 hover:text-black text-cyan-300 border border-cyan-500/30 font-bold font-mono transition-colors shadow-2xs cursor-pointer"
-                  >
-                    {p.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Match Rows Compactas e Fluidas - UEFA Champions League Matchday */}
-            <div className="space-y-2.5">
-              {matchLines.map((line, index) => {
-                const isConfigured = Boolean(line.timeMandante && line.timeVisitante && line.golsMandante !== '' && line.golsVisitante !== '');
-                return (
-                  <div 
-                    key={index} 
-                    className={`p-3 rounded-xl border transition-all ${
-                      isConfigured 
-                        ? 'bg-[#08123d]/90 border-cyan-400/50 shadow-lg shadow-cyan-950/40 ring-1 ring-cyan-400/20' 
-                        : 'bg-[#050b24]/90 border-cyan-900/40 hover:border-cyan-500/30'
-                    }`}
-                  >
-                    {/* Header do Jogo Compacto */}
-                    <div className="flex items-center justify-between mb-2 pb-1.5 border-b border-cyan-950">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-[#0b1747] text-cyan-300 font-mono border border-cyan-500/30">
-                          Jogo {index + 1}
-                        </span>
-                        {isConfigured ? (
-                          <span className="text-[11px] font-black text-cyan-300 flex items-center gap-1 font-mono">
-                            <Check className="w-3.5 h-3.5 text-cyan-400" />
-                            {line.timeMandante} {line.golsMandante} x {line.golsVisitante} {line.timeVisitante}
-                          </span>
-                        ) : (
-                          <span className="text-[10px] font-medium text-slate-400">
-                            Selecione os clubes e defina o placar
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => handleClearMatch(index)}
-                          className="p-1 text-slate-400 hover:text-rose-400 rounded transition-colors cursor-pointer"
-                          title="Limpar campos deste jogo"
-                        >
-                          <RotateCcw className="w-3 h-3" />
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Linha dos Times e Placar Compacta */}
-                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
-                      {/* Time Mandante */}
-                      <div className="sm:col-span-4">
-                        <select
-                          value={line.timeMandante}
-                          onChange={(e) => handleMatchChange(index, 'timeMandante', e.target.value)}
-                          disabled={!activeRound}
-                          className="w-full py-1.5 px-2 bg-[#04081c] border border-cyan-800/60 rounded-lg text-xs font-bold text-white focus:outline-hidden focus:ring-1 focus:ring-cyan-400 cursor-pointer"
-                        >
-                          <option value="">-- Clube Mandante --</option>
-                          {TEAMS_LIST.map((team) => (
-                            <option key={team} value={team} disabled={team === line.timeVisitante}>
-                              {team}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      {/* Placar Central com Stepper Compacto UCL */}
-                      <div className="sm:col-span-4 flex items-center justify-center gap-1">
-                        {/* Gols Mandante */}
-                        <div className="flex items-center border border-cyan-700/50 rounded-lg overflow-hidden bg-[#030617] shrink-0 shadow-2xs">
-                          <button
-                            type="button"
-                            onClick={() => handleStepGoals(index, 'golsMandante', -1)}
-                            disabled={!activeRound}
-                            className="w-6 h-7 flex items-center justify-center text-cyan-400 hover:bg-cyan-950/60 active:bg-cyan-900 cursor-pointer text-xs"
-                            title="Diminuir gol"
-                          >
-                            <Minus className="w-3 h-3" />
-                          </button>
-                          <input
-                            type="number"
-                            min="0"
-                            max="20"
-                            placeholder="-"
-                            value={line.golsMandante}
-                            onChange={(e) => handleMatchChange(index, 'golsMandante', e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' || e.keyCode === 13) {
-                                e.preventDefault();
-                                e.stopPropagation();
-                              }
-                            }}
-                            disabled={!activeRound}
-                            className="w-8 h-7 text-center text-xs font-black font-mono text-cyan-300 border-x border-cyan-800/50 bg-[#030617] focus:outline-hidden focus:bg-[#070e30]"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => handleStepGoals(index, 'golsMandante', 1)}
-                            disabled={!activeRound}
-                            className="w-6 h-7 flex items-center justify-center text-cyan-400 hover:bg-cyan-950/60 active:bg-cyan-900 cursor-pointer text-xs"
-                            title="Aumentar gol"
-                          >
-                            <Plus className="w-3 h-3" />
-                          </button>
-                        </div>
-
-                        <span className="text-xs font-black text-cyan-400/80 font-mono px-0.5">x</span>
-
-                        {/* Gols Visitante */}
-                        <div className="flex items-center border border-cyan-700/50 rounded-lg overflow-hidden bg-[#030617] shrink-0 shadow-2xs">
-                          <button
-                            type="button"
-                            onClick={() => handleStepGoals(index, 'golsVisitante', -1)}
-                            disabled={!activeRound}
-                            className="w-6 h-7 flex items-center justify-center text-cyan-400 hover:bg-cyan-950/60 active:bg-cyan-900 cursor-pointer text-xs"
-                            title="Diminuir gol"
-                          >
-                            <Minus className="w-3 h-3" />
-                          </button>
-                          <input
-                            type="number"
-                            min="0"
-                            max="20"
-                            placeholder="-"
-                            value={line.golsVisitante}
-                            onChange={(e) => handleMatchChange(index, 'golsVisitante', e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' || e.keyCode === 13) {
-                                e.preventDefault();
-                                e.stopPropagation();
-                              }
-                            }}
-                            disabled={!activeRound}
-                            className="w-8 h-7 text-center text-xs font-black font-mono text-cyan-300 border-x border-cyan-800/50 bg-[#030617] focus:outline-hidden focus:bg-[#070e30]"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => handleStepGoals(index, 'golsVisitante', 1)}
-                            disabled={!activeRound}
-                            className="w-6 h-7 flex items-center justify-center text-cyan-400 hover:bg-cyan-950/60 active:bg-cyan-900 cursor-pointer text-xs"
-                            title="Aumentar gol"
-                          >
-                            <Plus className="w-3 h-3" />
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Time Visitante */}
-                      <div className="sm:col-span-4">
-                        <select
-                          value={line.timeVisitante}
-                          onChange={(e) => handleMatchChange(index, 'timeVisitante', e.target.value)}
-                          disabled={!activeRound}
-                          className="w-full py-1.5 px-2 bg-[#04081c] border border-cyan-800/60 rounded-lg text-xs font-bold text-white focus:outline-hidden focus:ring-1 focus:ring-cyan-400 cursor-pointer"
-                        >
-                          <option value="">-- Clube Visitante --</option>
-                          {TEAMS_LIST.map((team) => (
-                            <option key={team} value={team} disabled={team === line.timeMandante}>
-                              {team}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-
-                    {/* Linha Inferior: Atalhos de Placares Comuns + Capitão */}
-                    <div className="mt-2 pt-2 border-t border-cyan-950 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      {/* Sugestões de Placares Comuns */}
-                      <div className="flex items-center gap-1 overflow-x-auto py-0.5 scrollbar-none">
-                        <span className="text-[10px] font-bold text-slate-400 shrink-0 mr-0.5 font-mono">
-                          Atalhos:
-                        </span>
-                        {COMMON_SCORE_SUGGESTIONS.map((preset) => {
-                          const isSelected = line.golsMandante === preset.m && line.golsVisitante === preset.v;
-                          return (
-                            <button
-                              key={preset.label}
-                              type="button"
-                              onClick={() => handleApplyPresetToMatch(index, preset.m, preset.v)}
-                              disabled={!activeRound}
-                              className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold cursor-pointer transition-colors border ${
-                                isSelected
-                                  ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white border-cyan-300 shadow-md shadow-cyan-950/60 font-black'
-                                  : 'bg-[#09133d] hover:bg-cyan-950 text-cyan-300 border-cyan-800/60'
-                              }`}
-                              title={`Definir ${preset.label}`}
-                            >
-                              {preset.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      {/* Capitão do Jogo */}
-                      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-1.5 shrink-0 w-full sm:w-auto">
-                        <div className="flex items-center gap-1.5 w-full sm:w-auto">
-                          <span className="text-[10px] font-bold text-amber-400 flex items-center gap-0.5 shrink-0 font-mono">
-                            <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
-                            Capitão:
-                          </span>
-                          <input
-                            type="text"
-                            placeholder="Haaland, Saka, Mbappé... (+1 pt)"
-                            value={line.capitao || ''}
-                            onChange={(e) => handleMatchChange(index, 'capitao', e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' || e.keyCode === 13) {
-                                e.preventDefault();
-                                e.stopPropagation();
-                              }
-                            }}
-                            autoComplete="off"
-                            autoCorrect="off"
-                            spellCheck={false}
-                            disabled={!activeRound}
-                            className="w-full sm:w-44 px-2 py-1 text-[11px] border border-cyan-800/60 rounded-md bg-[#04081c] focus:outline-hidden focus:ring-1 focus:ring-cyan-400 font-medium text-slate-100 placeholder:text-slate-500"
-                          />
-                        </div>
-                        {/* Sugestões rápidas de capitães das estrelas da Champions */}
-                        <div className="flex items-center gap-1 overflow-x-auto max-w-[260px] scrollbar-none py-0.5 min-h-[26px]">
-                          {line.capitao ? (
-                            <button
-                              type="button"
-                              onClick={() => handleMatchChange(index, 'capitao', '')}
-                              disabled={!activeRound}
-                              className="px-2 py-0.5 rounded text-[9px] font-mono font-bold bg-rose-950/60 hover:bg-rose-900 text-rose-300 border border-rose-500/40 transition-colors cursor-pointer shrink-0 flex items-center gap-1"
-                              title="Remover capitão deste jogo"
-                            >
-                              <span>✕ Limpar ({line.capitao})</span>
-                            </button>
-                          ) : (
-                            ['Haaland', 'Mbappé', 'Vini Jr', 'Saka', 'Kane', 'Lewa'].map((cap) => (
-                              <button
-                                key={cap}
-                                type="button"
-                                onClick={() => handleMatchChange(index, 'capitao', cap)}
-                                disabled={!activeRound}
-                                className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-[#071133] hover:bg-amber-400 hover:text-black text-amber-300/90 border border-amber-500/25 transition-colors cursor-pointer shrink-0"
-                                title={`Escalar ${cap} como capitão`}
-                              >
-                                +{cap}
-                              </button>
-                            ))
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Feedback messages */}
-            {statusMsg && (
-              <div className={`p-4 rounded-xl flex items-start gap-3 border text-sm ${
-                statusMsg.type === 'success' 
-                  ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-200' 
-                  : 'bg-rose-950/60 border-rose-500/50 text-rose-200'
-              }`}>
-                {statusMsg.type === 'success' ? (
-                  <CheckCircle className="w-5 h-5 shrink-0 text-emerald-400" />
-                ) : (
-                  <AlertCircle className="w-5 h-5 shrink-0 text-rose-400" />
-                )}
-                <span className="font-semibold">{statusMsg.text}</span>
-              </div>
-            )}
-
-            <div className="pt-3 mt-auto">
+            return (
               <button
+                key={g.id}
                 type="button"
-                onClick={handleFormSubmit}
-                disabled={submitting || !activeRound}
-                className="w-full py-4 text-white bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:from-cyan-400 hover:to-blue-500 active:scale-[0.99] rounded-xl font-black text-lg cursor-pointer transition-all flex items-center justify-center gap-2 shadow-xl shadow-cyan-950/60 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed uppercase tracking-wider font-display"
+                onClick={() => {
+                  setActiveGameId(g.id);
+                  if (viewMode === 'all') setViewMode('tabs');
+                }}
+                className={`py-1 px-1 rounded-lg border text-center transition-all cursor-pointer flex flex-col items-center justify-center ${
+                  isSelected
+                    ? 'bg-cyan-500 text-white border-cyan-300 shadow-md font-black'
+                    : complete
+                      ? 'bg-emerald-950/50 text-emerald-300 border-emerald-500/40 hover:bg-emerald-900/40'
+                      : 'bg-[#04081c] text-slate-300 border-cyan-900/50 hover:bg-cyan-950'
+                }`}
               >
-                <UclStarball className="w-5 h-5 text-white" glow />
-                {submitting ? 'Gravando Palpites da Champions...' : 'ENVIAR PALPITE DA CHAMPIONS'}
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
-                </svg>
-              </button>
-              <p className="text-slate-400 text-[10px] mt-2 font-mono text-center">
-                ★ 2 Envios por rodada permitidos. O último envio válido antes das terças 13:00 é o considerado.
-              </p>
-            </div>
-          </div>
-          </>
-          )}
-        </section>
-
-        {/* Right side widgets column - 1/3 width */}
-        <aside className="w-full lg:w-1/3 flex flex-col gap-6 shrink-0">
-          {/* Top 5 Leaderboard widget - Champions League Table */}
-          <div className="bg-[#080f33]/90 border border-cyan-500/25 rounded-2xl p-6 shadow-xl flex flex-col backdrop-blur-md">
-            <h3 className="font-black text-white uppercase tracking-tight text-xs mb-4 flex items-center gap-2 font-display">
-              <UclTrophy className="w-4 h-4 text-cyan-300" />
-              <span>Top 5 • Fase de Liga</span>
-            </h3>
-
-            <div className="space-y-2">
-              {[...participantes]
-                .sort((a,b) => {
-                  if (b.pontos !== a.pontos) return b.pontos - a.pontos;
-                  return (b.acertos_placar || 0) - (a.acertos_placar || 0);
-                })
-                .slice(0, 5)
-                .map((p, idx) => {
-                  const place = idx + 1;
-                  const isFirst = place === 1;
-                  return (
-                    <div 
-                      key={p.id} 
-                      className={`flex justify-between items-center p-3 rounded-xl border transition-all ${
-                        isFirst 
-                          ? 'bg-gradient-to-r from-[#172554] to-[#0c184d] border-cyan-400/50 text-white shadow-md' 
-                          : 'bg-[#050b24]/80 border-cyan-900/40 text-slate-200'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${
-                          isFirst ? 'bg-amber-400 text-black shadow-xs' : 'bg-slate-800 text-slate-300'
-                        }`}>
-                          {place}
-                        </span>
-                        <span className="font-bold text-xs truncate max-w-[120px]">{p.nome}</span>
-                        {isFirst && (
-                          <span className="text-[9px] text-amber-300 font-mono font-bold">★ LÍDER</span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] text-cyan-400 font-mono font-bold">🎯 {p.acertos_placar ?? 0}</span>
-                        <span className="font-mono font-black text-xs text-white">{p.pontos} Pts</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              {participantes.length === 0 && (
-                <div className="text-center text-xs text-slate-400 py-4">Nenhum participante registrado.</div>
-              )}
-            </div>
-          </div>
-
-          {/* Scoring Rules Widget - Champions League Theme */}
-          <div className="bg-[#080f33]/90 border border-cyan-500/25 rounded-2xl p-6 shadow-xl flex flex-col backdrop-blur-md">
-            <h3 className="font-black text-white uppercase tracking-tight text-xs mb-3 flex items-center gap-2 font-display">
-              <Award className="w-4 h-4 text-cyan-400" />
-              <span>Regras de Pontuação UCL</span>
-            </h3>
-
-            <div className="space-y-2 text-xs text-slate-300">
-              <div className="p-2.5 rounded-xl bg-[#050b24]/90 border border-cyan-900/50 flex items-center justify-between">
-                <span className="font-medium">Acertar Resultado (Vencedor/Empate)</span>
-                <span className="font-mono font-black text-cyan-400 text-xs">+3 Pts</span>
-              </div>
-              <div className="p-2.5 rounded-xl bg-[#050b24]/90 border border-cyan-900/50 flex items-center justify-between">
-                <span className="font-medium">Acertar Placar Exato</span>
-                <span className="font-mono font-black text-cyan-400 text-xs">+2 Pts</span>
-              </div>
-              <div className="p-2.5 rounded-xl bg-[#0a184a]/90 border border-cyan-500/40 flex items-center justify-between text-white">
-                <span className="font-bold flex items-center gap-1">
-                  <UclStarball className="w-3 h-3 text-cyan-300" />
-                  Placar Exato Completo
+                <div className="flex items-center gap-1">
+                  <span className="text-[11px] font-black font-mono">J{g.id}</span>
+                  {complete ? (
+                    <Check className="w-2.5 h-2.5 text-emerald-400" />
+                  ) : (
+                    <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+                  )}
+                </div>
+                <span className="text-[8px] font-mono truncate max-w-full block text-slate-400">
+                  {complete ? getGameSummary(g) : 'Vazio'}
                 </span>
-                <span className="font-mono font-black text-cyan-300 text-xs">5 Pts</span>
-              </div>
-              <div className="p-2.5 rounded-xl bg-[#050b24]/90 border border-cyan-900/50 flex items-center justify-between">
-                <span className="font-medium">Placar 0x0 sem Capitão</span>
-                <span className="font-mono font-black text-amber-400 text-xs">6 Pts</span>
-              </div>
-              <div className="p-2.5 rounded-xl bg-[#050b24]/90 border border-cyan-900/50 flex items-center justify-between">
-                <span className="font-medium">Placar 0x0 com Capitão</span>
-                <span className="font-mono font-black text-amber-400 text-xs">5 Pts</span>
-              </div>
-              <div className="p-2.5 rounded-xl bg-[#050b24]/90 border border-cyan-900/50 flex items-center justify-between">
-                <span className="font-medium">Gol do Capitão Indicado</span>
-                <span className="font-mono font-black text-cyan-400 text-xs">+1 Pt / gol</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Audit Logs Widget */}
-          <div className="bg-[#080f33]/90 border border-cyan-500/25 rounded-2xl p-6 shadow-xl flex flex-col backdrop-blur-md">
-            <h3 className="font-black text-white uppercase tracking-tight text-xs mb-3 flex items-center gap-2 font-display">
-              <Clock className="w-4 h-4 text-cyan-400" />
-              <span>Auditoria de Transações UCL</span>
-            </h3>
-
-            <div className="space-y-2.5 max-h-[224px] overflow-y-auto pr-1">
-              {auditLogs.map((log) => {
-                const dateObj = new Date(log.timestamp);
-                const timeStr = !isNaN(dateObj.getTime())
-                  ? `${String(dateObj.getHours()).padStart(2, '0')}:${String(dateObj.getMinutes()).padStart(2, '0')}:${String(dateObj.getSeconds()).padStart(2, '0')}`
-                  : '';
-                
-                return (
-                  <div key={log.id} className="text-[11px] border-b border-cyan-950 pb-2 last:pb-0 flex flex-col gap-1">
-                    <div className="flex items-center justify-between gap-1">
-                      <div className="flex items-center gap-1.5">
-                        <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${
-                          log.status === 'SUCESSO' ? 'bg-cyan-400 shadow-xs shadow-cyan-400' :
-                          log.status === 'ALERTA' ? 'bg-amber-400' : 'bg-slate-500'
-                        }`} />
-                        <span className="font-mono text-cyan-300 font-bold">{timeStr}</span>
-                      </div>
-                      <span className="font-mono text-[9px] text-slate-500">{log.id}</span>
-                    </div>
-                    <p className="text-slate-300 leading-relaxed font-medium pr-1 break-words">
-                      {log.evento}
-                    </p>
-                  </div>
-                );
-              })}
-              {auditLogs.length === 0 && (
-                <div className="text-center text-xs text-slate-500 py-6">Nenhum evento registrado.</div>
-              )}
-            </div>
-          </div>
-        </aside>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      {/* Histórico de Rodadas Anteriores & Pontuações Detalhadas */}
-      <div className="pt-8 border-t border-cyan-500/20">
-        <HistoricoRodadas initialRoundId={selectedClosedRound || (closedRounds.length > 0 ? closedRounds[0].id : undefined)} />
+      {/* GAME CONTENT: Either FOCUSED (1 game, ZERO scroll) or ALL (all 5) */}
+      {viewMode === 'tabs' ? (
+        <div className="bg-[#080f33]/95 rounded-xl border border-cyan-400/50 p-3 sm:p-3.5 shadow-xl backdrop-blur-md">
+          {/* Header of Active Game */}
+          <div className="flex items-center justify-between pb-2 mb-2 border-b border-cyan-950/80">
+            <div className="flex items-center gap-1.5">
+              <span className="w-5 h-5 rounded-full bg-cyan-500 text-white font-mono text-xs font-black flex items-center justify-center">
+                {currentGame.id}
+              </span>
+              <span className="text-xs sm:text-sm font-black text-white">
+                Preencher Jogo {currentGame.id} de 5
+              </span>
+              {isGameComplete(currentGame) && (
+                <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-emerald-950 text-emerald-300 font-mono border border-emerald-500/40 flex items-center gap-0.5">
+                  <Check className="w-2.5 h-2.5" />
+                  Pronto
+                </span>
+              )}
+            </div>
+
+            {/* Navigation arrows to jump between games without scrolling */}
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                disabled={activeGameId === 1}
+                onClick={() => setActiveGameId(prev => Math.max(1, prev - 1))}
+                className="p-1 rounded bg-[#030617] border border-cyan-900/60 text-slate-300 hover:text-white disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
+                title="Jogo anterior"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                disabled={activeGameId === 5}
+                onClick={() => setActiveGameId(prev => Math.min(5, prev + 1))}
+                className="p-1 rounded bg-[#030617] border border-cyan-900/60 text-slate-300 hover:text-white disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
+                title="Próximo jogo"
+              >
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Render Active Game Form */}
+          {renderGameContent(currentGame)}
+
+          {/* Quick next game action */}
+          <div className="mt-3 pt-2 border-t border-cyan-950/80 flex items-center justify-between">
+            <span className="text-[10px] text-slate-400 font-mono">
+              Status: {isGameComplete(currentGame) ? '✓ Pronto' : 'Preencha o clube, placar e capitão'}
+            </span>
+            {activeGameId < 5 ? (
+              <button
+                type="button"
+                onClick={() => setActiveGameId(prev => Math.min(5, prev + 1))}
+                className="px-2.5 py-1 bg-[#0a1b52] hover:bg-[#0e2777] border border-cyan-400/40 text-cyan-200 hover:text-white rounded-lg text-xs font-bold font-mono transition-colors cursor-pointer flex items-center gap-1"
+              >
+                <span>Avançar para Jogo {activeGameId + 1}</span>
+                <ChevronRight className="w-3 h-3" />
+              </button>
+            ) : (
+              <span className="text-[10px] font-bold text-cyan-300 font-mono">
+                Último jogo (Jogo 5)
+              </span>
+            )}
+          </div>
+        </div>
+      ) : (
+        /* ALL 5 GAMES EXPANDED VIEW */
+        <div className="space-y-2.5">
+          {games.map((g) => {
+            const complete = isGameComplete(g);
+            return (
+              <div 
+                key={g.id}
+                className={`p-3 rounded-xl border transition-all ${
+                  complete 
+                    ? 'bg-[#081442]/95 border-cyan-400/50 shadow-md ring-1 ring-cyan-400/20' 
+                    : 'bg-[#071138]/90 border-cyan-500/30'
+                }`}
+              >
+                <div className="flex items-center justify-between pb-1.5 mb-2 border-b border-cyan-950/80">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-4 h-4 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-400/40 text-[10px] font-black font-mono flex items-center justify-center">
+                      {g.id}
+                    </span>
+                    <span className="text-xs font-black text-white">Jogo {g.id} de 5</span>
+                    {complete && (
+                      <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-emerald-950 text-emerald-300 font-mono border border-emerald-500/40 flex items-center gap-0.5">
+                        <Check className="w-2.5 h-2.5" />
+                        Pronto
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-[10px] font-mono text-cyan-300">
+                    {complete ? getGameSummary(g) : ''}
+                  </span>
+                </div>
+                {renderGameContent(g)}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Status & Feedback Alerts */}
+      {statusMsg && (
+        <div className={`p-3 rounded-xl border text-xs font-bold flex items-start gap-2 shadow-xl transition-all ${
+          statusMsg.type === 'success'
+            ? 'bg-emerald-950/90 text-emerald-200 border-emerald-500/50'
+            : 'bg-rose-950/90 text-rose-200 border-rose-500/50'
+        }`}>
+          {statusMsg.type === 'success' ? (
+            <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+          ) : (
+            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+          )}
+          <div className="flex-1">
+            <span>{statusMsg.text}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Submit Button */}
+      <div className="pt-1">
+        <button
+          type="button"
+          onClick={handleFormSubmit}
+          disabled={submitting || (activeRound ? activeRound.status !== 'aberta' : false)}
+          className={`w-full py-3 px-4 rounded-xl font-black text-xs sm:text-sm uppercase tracking-wider transition-all shadow-xl flex items-center justify-center gap-2 cursor-pointer ${
+            completedGamesCount === 5 && (!activeRound || activeRound.status === 'aberta')
+              ? 'bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white shadow-cyan-950/80 hover:shadow-cyan-500/25'
+              : 'bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-750'
+          }`}
+        >
+          {submitting ? (
+            <span>GRAVANDO PALPITES OFICIAIS...</span>
+          ) : (
+            <>
+              <CheckCircle className="w-4 h-4 text-cyan-300" />
+              <span>ENVIAR 5 PALPITES DA CHAMPIONS ({completedGamesCount}/5)</span>
+            </>
+          )}
+        </button>
       </div>
     </div>
   );

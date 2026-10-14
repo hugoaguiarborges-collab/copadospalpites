@@ -47,7 +47,7 @@ export default function LeaderboardPage() {
   const liderPontos = lider ? lider.pontos : 0;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 w-full max-w-full overflow-x-hidden">
       {/* Page header with Champions League accent */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-cyan-500/20 pb-4 gap-4">
         <div>
@@ -177,12 +177,17 @@ export default function LeaderboardPage() {
                   <th className="px-5 py-3 text-center w-24">Posição</th>
                   <th className="px-5 py-3">Participante</th>
                   <th className="px-5 py-3 text-center w-36">
-                    <span className="inline-flex items-center gap-1 text-cyan-300">
+                    <span className="inline-flex items-center gap-1.5 text-cyan-300 font-black">
+                      <Award className="w-3.5 h-3.5 text-cyan-400" />
+                      Pontuação
+                    </span>
+                  </th>
+                  <th className="px-5 py-3 text-center w-36 text-slate-300">
+                    <span className="inline-flex items-center gap-1 text-slate-400">
                       <Target className="w-3 h-3 text-cyan-400" />
                       Placares Exatos
                     </span>
                   </th>
-                  <th className="px-5 py-3 text-right w-36 text-slate-300">Pontuação</th>
                   <th className="px-5 py-3 text-center w-32">Perfil</th>
                 </tr>
               </thead>
@@ -241,17 +246,17 @@ export default function LeaderboardPage() {
                         </div>
                       </td>
                       <td className="px-5 py-3 text-center">
+                        <span className="inline-flex items-center gap-1 font-mono font-black text-sm text-cyan-300 bg-cyan-950/80 border border-cyan-500/40 px-3 py-1 rounded-full shadow-xs">
+                          {p.pontos} PTS
+                        </span>
+                      </td>
+                      <td className="px-5 py-3 text-center">
                         <span 
-                          className="inline-flex items-center gap-1.5 font-mono font-black text-xs bg-[#0b1747] text-cyan-300 border border-cyan-500/40 px-2.5 py-0.5 rounded-full shadow-2xs"
-                          title={`${p.acertos_placar ?? 0} acertos de placar exato (critério de desempate)`}
+                          className="inline-flex items-center gap-1.5 font-mono font-bold text-xs bg-[#0b1747] text-slate-200 border border-cyan-500/30 px-2.5 py-0.5 rounded-full shadow-2xs"
+                          title={`${p.acertos_placar ?? 0} acertos de placar exato (critério oficial de desempate)`}
                         >
                           <Target className="w-3 h-3 text-cyan-400" />
                           {p.acertos_placar ?? 0}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3 text-right">
-                        <span className="font-mono font-black text-white text-sm">
-                          {p.pontos} PTS
                         </span>
                       </td>
                       <td className="px-5 py-3 text-center">

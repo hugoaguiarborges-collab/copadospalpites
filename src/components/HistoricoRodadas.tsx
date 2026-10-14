@@ -240,7 +240,7 @@ export default function HistoricoRodadas({ initialRoundId }: HistoricoRodadasPro
   }, [evaluatedParticipants, validGuessesByParticipant]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 w-full max-w-full overflow-x-hidden">
       {/* Cabeçalho da página - Champions League Matchday */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-cyan-500/20 pb-4 gap-4">
         <div>
@@ -510,10 +510,10 @@ export default function HistoricoRodadas({ initialRoundId }: HistoricoRodadasPro
                 <tr className="bg-[#040822]/80 border-b border-cyan-950 text-slate-400 font-bold uppercase tracking-wider text-[10px] font-mono">
                   <th className="py-3 px-4 w-14 text-center">Pos</th>
                   <th className="py-3 px-4">Participante</th>
+                  <th className="py-3 px-4 text-center">Pontuação</th>
                   <th className="py-3 px-4 text-center">Acertos Resultado (+3)</th>
                   <th className="py-3 px-4 text-center">Placares Exatos (+2)</th>
                   <th className="py-3 px-4 text-center">Gols Capitão (+1)</th>
-                  <th className="py-3 px-4 text-right">Pontos na Rodada</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-cyan-950/70">
@@ -540,6 +540,11 @@ export default function HistoricoRodadas({ initialRoundId }: HistoricoRodadasPro
                         </button>
                       </td>
                       <td className="py-3 px-4 text-center">
+                        <span className="inline-flex items-center gap-1 font-mono font-black text-sm text-cyan-300 bg-cyan-950/80 border border-cyan-500/40 px-3 py-1 rounded-full shadow-xs">
+                          +{item.totalPontos} PTS
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-center">
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-emerald-950/80 text-emerald-300 border border-emerald-500/40">
                           {item.totalAcertosResultado}x (+{item.totalPontosResultado} pts)
                         </span>
@@ -552,11 +557,6 @@ export default function HistoricoRodadas({ initialRoundId }: HistoricoRodadasPro
                       <td className="py-3 px-4 text-center">
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-amber-950/80 text-amber-300 border border-amber-500/40">
                           {item.totalGolsCapitao} gols (+{item.totalPontosCapitao} pts)
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <span className="font-mono font-black text-base text-cyan-300">
-                          +{item.totalPontos} PTS
                         </span>
                       </td>
                     </tr>

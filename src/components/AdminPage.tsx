@@ -226,7 +226,7 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 w-full max-w-full overflow-x-hidden">
       {/* Admin header - UEFA Champions League Match Center Grade */}
       <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 border-b border-cyan-500/20 pb-4">
         <div>

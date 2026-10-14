@@ -5,6 +5,13 @@ export interface Participante {
   acertos_placar?: number;
 }
 
+export interface JogoDisponivel {
+  time_mandante: string;
+  time_visitante: string;
+  horario?: string;
+  data?: string;
+}
+
 export interface Rodada {
   id: string; // document path id
   nome: string;
@@ -12,6 +19,8 @@ export interface Rodada {
   fechamento: string; // ISO String
   status: 'aberta' | 'encerrada';
   is_test?: boolean;
+  data_jogos?: string; // ex: "20/10", "21/10"
+  jogos_disponiveis?: JogoDisponivel[];
   jogos_oficiais?: JogoResultadoOficial[];
   apurada?: boolean;
   data_apuracao?: string;
@@ -29,6 +38,10 @@ export interface Palpite {
   gols_mandante?: number;
   time_visitante?: string;
   gols_visitante?: number;
+  tipo_palpite?: 'vitoria' | 'empate';
+  vencedor?: string;
+  gols_vencedor?: number;
+  gols_perdedor?: number;
   avaliado?: boolean;
   pontos_concedidos?: number;
   motivo_detalhado?: string;

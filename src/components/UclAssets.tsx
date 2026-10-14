@@ -108,37 +108,37 @@ export function UclTrophy({ className = "w-8 h-8" }: { className?: string }) {
  * Logomarca oficial completa com Starball e tipografia oficial da UEFA
  */
 export function UclLogo({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
-  const iconSize = size === "sm" ? "w-8 h-8" : size === "lg" ? "w-14 h-14" : "w-11 h-11";
-  const titleSize = size === "sm" ? "text-sm" : size === "lg" ? "text-xl" : "text-base sm:text-lg";
-  const subSize = size === "sm" ? "text-[8px]" : "text-[10px]";
+  const iconSize = size === "sm" ? "w-6 h-6" : size === "lg" ? "w-12 h-12" : "w-7 h-7 sm:w-9 sm:h-9";
+  const titleSize = size === "sm" ? "text-xs" : size === "lg" ? "text-xl" : "text-sm sm:text-base md:text-lg";
+  const subSize = size === "sm" ? "text-[7px]" : "text-[8px] sm:text-[10px]";
 
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex items-center gap-2 sm:gap-3 max-w-full min-w-0">
       <div className="relative shrink-0 flex items-center justify-center">
         {/* Glow de fundo */}
         <div className="absolute inset-0 rounded-full bg-cyan-400/20 blur-md scale-125" />
-        <div className="relative w-11 h-11 rounded-full bg-gradient-to-b from-[#0a1445] via-[#050b28] to-[#020516] border border-cyan-400/50 flex items-center justify-center text-white p-1 shadow-lg shadow-cyan-950/50">
+        <div className="relative w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-gradient-to-b from-[#0a1445] via-[#050b28] to-[#020516] border border-cyan-400/50 flex items-center justify-center text-white p-1 shadow-lg shadow-cyan-950/50">
           <UclStarball className={`${iconSize} text-white`} glow />
         </div>
       </div>
-      <div>
+      <div className="min-w-0">
         <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="text-[10px] tracking-[0.25em] font-black text-cyan-400 uppercase font-mono block">
+          <span className="text-[9px] sm:text-[10px] tracking-[0.2em] font-black text-cyan-400 uppercase font-mono block">
             UEFA
           </span>
-          <span className="bg-gradient-to-r from-cyan-400 via-sky-300 to-white bg-clip-text text-transparent font-black tracking-wider uppercase font-display block text-[11px]">
+          <span className="bg-gradient-to-r from-cyan-400 via-sky-300 to-white bg-clip-text text-transparent font-black tracking-wider uppercase font-display block text-[10px] sm:text-[11px] truncate">
             CHAMPIONS LEAGUE
           </span>
         </div>
-        <div className="flex items-center gap-1.5">
-          <h1 className={`${titleSize} font-black tracking-tight text-white uppercase font-display leading-tight drop-shadow-sm`}>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <h1 className={`${titleSize} font-black tracking-tight text-white uppercase font-display leading-tight drop-shadow-sm truncate`}>
             Copa dos Palpites
           </h1>
-          <span className="bg-gradient-to-r from-cyan-500 to-blue-600 text-white text-[8px] font-black px-1.5 py-0.5 rounded-sm uppercase tracking-widest shadow-2xs">
+          <span className="bg-gradient-to-r from-cyan-500 to-blue-600 text-white text-[7px] sm:text-[8px] font-black px-1 sm:px-1.5 py-0.5 rounded-sm uppercase tracking-widest shadow-2xs">
             OFICIAL
           </span>
         </div>
-        <span className={`${subSize} font-mono text-slate-400 tracking-wider block font-semibold`}>
+        <span className={`${subSize} font-mono text-slate-400 tracking-wider block font-semibold truncate`}>
           Edição Europeia • 36 Clubes • 50 Rodadas
         </span>
       </div>

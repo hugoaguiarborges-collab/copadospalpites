@@ -14,8 +14,9 @@ import {
 import { db } from '../firebase';
 import { Rodada, Palpite, Participante, JogoResultadoOficial } from '../types';
 import { TEAMS_LIST } from '../constants/teams';
+import { REAL_UCL_FIXTURES, getFixturesForRoundDate } from '../constants/uclFixtures';
 import { evaluateGuessAgainstResult, parseGuess, normalizeTeamName, areTeamsMatching } from '../utils/scoreCalculator';
-import { getNextTuesday13h, formatDateTimeDisplay, getRoundNumber } from '../utils/dateUtils';
+import { getNextTuesday13h, getNextWednesday13h, getClosingForNextRound, getClosingForRound, formatDateTimeDisplay, getRoundNumber, isTuesdayMatchday, getFriendlyClosingLabel } from '../utils/dateUtils';
 import TabelaParticipacao from './TabelaParticipacao';
 import { 
   Check, 
@@ -119,6 +120,80 @@ export default function AdminResults() {
     loadData();
   }, []);
 
+  // Function to extract unique matches from guesses in this round
+  const extractMatchesFromGuesses = (guessList: Palpite[]): MatchResultInput[] => {
+    const uniqueMatches: MatchResultInput[] = [];
+    const seenKeys = new Set<string>();
+
+    // 1. Draw guesses or full-match guesses with both clubs specified
+    for (const g of guessList) {
+      const parsed = parseGuess(g);
+      if (parsed && parsed.timeMandante && parsed.timeVisitante) {
+        const canonicalHome = TEAMS_LIST.find(t => areTeamsMatching(t, parsed.timeMandante)) || parsed.timeMandante;
+        const canonicalAway = TEAMS_LIST.find(t => areTeamsMatching(t, parsed.timeVisitante)) || parsed.timeVisitante;
+        
+        const matchKey = `${normalizeTeamName(canonicalHome)}__vs__${normalizeTeamName(canonicalAway)}`;
+        const reverseKey = `${normalizeTeamName(canonicalAway)}__vs__${normalizeTeamName(canonicalHome)}`;
+
+        if (!seenKeys.has(matchKey) && !seenKeys.has(reverseKey)) {
+          seenKeys.add(matchKey);
+          uniqueMatches.push({
+            timeMandante: canonicalHome,
+            timeVisitante: canonicalAway,
+            golsMandante: '',
+            golsVisitante: ''
+          });
+        }
+      }
+    }
+
+    // 2. Cross-reference winner guesses with verified UCL calendar fixtures
+    const targetR = rounds.find(r => r.id === selectedRoundId);
+    const fixtures = getFixturesForRoundDate(targetR?.nome || targetR?.id || '20/10');
+    for (const f of fixtures) {
+      const matchKey = `${normalizeTeamName(f.time_mandante)}__vs__${normalizeTeamName(f.time_visitante)}`;
+      const reverseKey = `${normalizeTeamName(f.time_visitante)}__vs__${normalizeTeamName(f.time_mandante)}`;
+
+      if (!seenKeys.has(matchKey) && !seenKeys.has(reverseKey)) {
+        const hasGuess = guessList.some(g => {
+          const p = parseGuess(g);
+          if (!p) return false;
+          return areTeamsMatching(p.timeMandante, f.time_mandante) ||
+                 areTeamsMatching(p.timeMandante, f.time_visitante) ||
+                 (p.timeVisitante && (areTeamsMatching(p.timeVisitante, f.time_mandante) || areTeamsMatching(p.timeVisitante, f.time_visitante)));
+        });
+
+        if (hasGuess) {
+          seenKeys.add(matchKey);
+          uniqueMatches.push({
+            timeMandante: f.time_mandante,
+            timeVisitante: f.time_visitante,
+            golsMandante: '',
+            golsVisitante: ''
+          });
+        }
+      }
+    }
+
+    // 3. If still fewer than 5 matches, fill with official round fixtures so admin has 5 ready matches
+    for (const f of fixtures) {
+      if (uniqueMatches.length >= 5) break;
+      const matchKey = `${normalizeTeamName(f.time_mandante)}__vs__${normalizeTeamName(f.time_visitante)}`;
+      const reverseKey = `${normalizeTeamName(f.time_visitante)}__vs__${normalizeTeamName(f.time_mandante)}`;
+      if (!seenKeys.has(matchKey) && !seenKeys.has(reverseKey)) {
+        seenKeys.add(matchKey);
+        uniqueMatches.push({
+          timeMandante: f.time_mandante,
+          timeVisitante: f.time_visitante,
+          golsMandante: '',
+          golsVisitante: ''
+        });
+      }
+    }
+
+    return uniqueMatches;
+  };
+
   // Load guesses and existing official results when selected round changes
   const loadGuessesForSelectedRound = async () => {
     if (!selectedRoundId) return;
@@ -148,41 +223,15 @@ export default function AdminResults() {
         return nextMap;
       });
 
-      // Function to extract unique matches from guesses in this round
-      const extractMatchesFromGuesses = (guessList: Palpite[]): MatchResultInput[] => {
-        const uniqueMatches: MatchResultInput[] = [];
-        const seenKeys = new Set<string>();
-
-        for (const g of guessList) {
-          const parsed = parseGuess(g);
-          if (parsed && parsed.timeMandante && parsed.timeVisitante) {
-            // Find canonical team names if available
-            const canonicalHome = TEAMS_LIST.find(t => areTeamsMatching(t, parsed.timeMandante)) || parsed.timeMandante;
-            const canonicalAway = TEAMS_LIST.find(t => areTeamsMatching(t, parsed.timeVisitante)) || parsed.timeVisitante;
-            
-            const matchKey = `${normalizeTeamName(canonicalHome)}__vs__${normalizeTeamName(canonicalAway)}`;
-            const reverseKey = `${normalizeTeamName(canonicalAway)}__vs__${normalizeTeamName(canonicalHome)}`;
-
-            if (!seenKeys.has(matchKey) && !seenKeys.has(reverseKey)) {
-              seenKeys.add(matchKey);
-              uniqueMatches.push({
-                timeMandante: canonicalHome,
-                timeVisitante: canonicalAway,
-                golsMandante: '',
-                golsVisitante: ''
-              });
-            }
-          }
-        }
-        return uniqueMatches;
-      };
-
       // Check if this round already has official matches registered
       const targetR = rounds.find(r => r.id === selectedRoundId);
       if (targetR?.jogos_oficiais && targetR.jogos_oficiais.length > 0) {
         setOfficialMatches(prev => {
           return targetR.jogos_oficiais!.map(jo => {
-            const existing = prev.find(p => areTeamsMatching(p.timeMandante, jo.time_mandante) && areTeamsMatching(p.timeVisitante, jo.time_visitante));
+            const existing = prev.find(p => 
+              (areTeamsMatching(p.timeMandante, jo.time_mandante) && areTeamsMatching(p.timeVisitante, jo.time_visitante)) ||
+              (areTeamsMatching(p.timeMandante, jo.time_visitante) && areTeamsMatching(p.timeVisitante, jo.time_mandante))
+            );
             return {
               timeMandante: jo.time_mandante,
               timeVisitante: jo.time_visitante,
@@ -211,24 +260,33 @@ export default function AdminResults() {
           if (loaded.length > 0) {
             setOfficialMatches(prev => {
               return loaded.map(l => {
-                const existing = prev.find(p => areTeamsMatching(p.timeMandante, l.timeMandante) && areTeamsMatching(p.timeVisitante, l.timeVisitante));
+                const existing = prev.find(p => 
+                  (areTeamsMatching(p.timeMandante, l.timeMandante) && areTeamsMatching(p.timeVisitante, l.timeVisitante)) ||
+                  (areTeamsMatching(p.timeMandante, l.timeVisitante) && areTeamsMatching(p.timeVisitante, l.timeMandante))
+                );
                 return existing && (existing.golsMandante !== '' || existing.golsVisitante !== '') ? existing : l;
               });
             });
           }
         } else {
-          // AUTO-DISCOVERY: No official results saved yet, automatically discover matches from participants' guesses!
+          // AUTO-DISCOVERY: No official results saved yet, automatically discover matches from participants' guesses and official fixtures!
           const autoDiscovered = extractMatchesFromGuesses(list);
           if (autoDiscovered.length > 0) {
             setOfficialMatches(prev => {
-              // Preserve any scores already entered by the admin in memory
               return autoDiscovered.map(ad => {
-                const existing = prev.find(p => areTeamsMatching(p.timeMandante, ad.timeMandante) && areTeamsMatching(p.timeVisitante, ad.timeVisitante));
+                const existing = prev.find(p => 
+                  (areTeamsMatching(p.timeMandante, ad.timeMandante) && areTeamsMatching(p.timeVisitante, ad.timeVisitante)) ||
+                  (areTeamsMatching(p.timeMandante, ad.timeVisitante) && areTeamsMatching(p.timeVisitante, ad.timeMandante))
+                );
                 return existing && (existing.golsMandante !== '' || existing.golsVisitante !== '') ? existing : ad;
               });
             });
           } else {
-            setOfficialMatches(prev => prev.length > 0 ? prev : [
+            setOfficialMatches([
+              { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '' },
+              { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '' },
+              { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '' },
+              { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '' },
               { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '' }
             ]);
           }
@@ -243,39 +301,43 @@ export default function AdminResults() {
 
   // Helper to re-detect games from submitted guesses on demand
   const handleAutoPopulateMatchesFromGuesses = () => {
-    const uniqueMatches: MatchResultInput[] = [];
-    const seenKeys = new Set<string>();
-
-    for (const g of guesses) {
-      const parsed = parseGuess(g);
-      if (parsed && parsed.timeMandante && parsed.timeVisitante) {
-        const canonicalHome = TEAMS_LIST.find(t => areTeamsMatching(t, parsed.timeMandante)) || parsed.timeMandante;
-        const canonicalAway = TEAMS_LIST.find(t => areTeamsMatching(t, parsed.timeVisitante)) || parsed.timeVisitante;
-        
-        const matchKey = `${normalizeTeamName(canonicalHome)}__vs__${normalizeTeamName(canonicalAway)}`;
-        const reverseKey = `${normalizeTeamName(canonicalAway)}__vs__${normalizeTeamName(canonicalHome)}`;
-
-        if (!seenKeys.has(matchKey) && !seenKeys.has(reverseKey)) {
-          seenKeys.add(matchKey);
-          // Preserve existing scores if already typed for this pair
-          const existing = officialMatches.find(
-            m => areTeamsMatching(m.timeMandante, canonicalHome) && areTeamsMatching(m.timeVisitante, canonicalAway)
+    const auto = extractMatchesFromGuesses(guesses);
+    if (auto.length > 0) {
+      setOfficialMatches(prev => {
+        return auto.map(ad => {
+          const existing = prev.find(p => 
+            (areTeamsMatching(p.timeMandante, ad.timeMandante) && areTeamsMatching(p.timeVisitante, ad.timeVisitante)) ||
+            (areTeamsMatching(p.timeMandante, ad.timeVisitante) && areTeamsMatching(p.timeVisitante, ad.timeMandante))
           );
-          uniqueMatches.push({
-            timeMandante: canonicalHome,
-            timeVisitante: canonicalAway,
+          return existing && (existing.golsMandante !== '' || existing.golsVisitante !== '') ? existing : ad;
+        });
+      });
+      setSuccessMsg(`Confrontos preenchidos automaticamente com base nos palpites e calendário oficial (${auto.length} confrontos carregados). Basta ajustar os placares!`);
+    } else {
+      setErrorMsg('Nenhum confronto identificado para esta rodada.');
+    }
+  };
+
+  // Helper to load official UCL fixtures directly
+  const handleLoadOfficialFixtures = () => {
+    const targetR = rounds.find(r => r.id === selectedRoundId);
+    const fixtures = getFixturesForRoundDate(targetR?.nome || targetR?.id || '20/10');
+    if (fixtures && fixtures.length > 0) {
+      setOfficialMatches(prev => {
+        return fixtures.slice(0, 5).map(f => {
+          const existing = prev.find(p => 
+            (areTeamsMatching(p.timeMandante, f.time_mandante) && areTeamsMatching(p.timeVisitante, f.time_visitante)) ||
+            (areTeamsMatching(p.timeMandante, f.time_visitante) && areTeamsMatching(p.timeVisitante, f.time_mandante))
+          );
+          return {
+            timeMandante: f.time_mandante,
+            timeVisitante: f.time_visitante,
             golsMandante: existing ? existing.golsMandante : '',
             golsVisitante: existing ? existing.golsVisitante : ''
-          });
-        }
-      }
-    }
-
-    if (uniqueMatches.length > 0) {
-      setOfficialMatches(uniqueMatches);
-      setSuccessMsg(`Jogos preenchidos automaticamente com base nos palpites (${uniqueMatches.length} jogos carregados). Basta informar os placares!`);
-    } else {
-      setErrorMsg('Nenhum jogo encontrado nos palpites enviados desta rodada.');
+          };
+        });
+      });
+      setSuccessMsg(`5 confrontos oficiais da rodada da Champions League carregados! Preencha os placares.`);
     }
   };
 
@@ -664,16 +726,51 @@ export default function AdminResults() {
         nextRoundMsg = ` Placares atualizados e o mercado da Rodada de Teste foi REABERTO AUTOMATICAMENTE para novos testes!`;
       } else {
         const currentRoundNum = getRoundNumber(roundName || selectedRoundId);
-        const nextRound = rounds.find(r => !r.is_test && r.id !== 'rodada-teste' && getRoundNumber(r.nome || r.id) === currentRoundNum + 1);
+        const wasTuesday = isTuesdayMatchday(targetRound);
+
+        let nextRound: Rodada | undefined;
+
+        if (wasTuesday) {
+          // Terça apurada: a próxima etapa é a QUARTA da MESMA rodada!
+          nextRound = rounds.find(r => 
+            !r.is_test && 
+            r.id !== 'rodada-teste' && 
+            getRoundNumber(r.nome || r.id) === currentRoundNum &&
+            !isTuesdayMatchday(r)
+          );
+        } else {
+          // Quarta apurada: a próxima etapa é a TERÇA da PRÓXIMA rodada (currentRoundNum + 1)!
+          nextRound = rounds.find(r => 
+            !r.is_test && 
+            r.id !== 'rodada-teste' && 
+            getRoundNumber(r.nome || r.id) === currentRoundNum + 1 &&
+            isTuesdayMatchday(r)
+          );
+        }
+
+        // Fallback: se não encontrar por separação explícita de dia, busca próxima rodada disponível
+        if (!nextRound) {
+          nextRound = rounds.find(r => 
+            !r.is_test && 
+            r.id !== 'rodada-teste' && 
+            r.id !== selectedRoundId && 
+            !r.apurada && 
+            r.status !== 'aberta'
+          );
+        }
 
         if (nextRound) {
-          const nextClosing = getNextTuesday13h(new Date());
+          const { fechamento: nextClosing, targetDateLabel: nextDate, targetDayName } = getClosingForNextRound(targetRound, new Date());
+          const nextMatches = REAL_UCL_FIXTURES[nextDate] || REAL_UCL_FIXTURES['21/10'];
+
           await updateDoc(doc(db, 'rodadas', nextRound.id), {
             status: 'aberta',
             abertura: nowISO,
-            fechamento: nextClosing.toISOString()
+            fechamento: nextClosing.toISOString(),
+            data_jogos: nextDate,
+            jogos_disponiveis: nextMatches
           });
-          nextRoundMsg = ` A ${roundName} foi encerrada e o mercado da ${nextRound.nome} foi ABERTO AUTOMATICAMENTE! Fechamento na terça-feira às 13:00 (${formatDateTimeDisplay(nextClosing.toISOString())}).`;
+          nextRoundMsg = ` A ${roundName} foi encerrada e o mercado da ${nextRound.nome} foi ABERTO AUTOMATICAMENTE com fechamento na ${targetDayName} (${formatDateTimeDisplay(nextClosing.toISOString())})!`;
         } else {
           nextRoundMsg = ` A ${roundName} foi encerrada.`;
         }
@@ -713,14 +810,14 @@ export default function AdminResults() {
   const handleOpenMarketNow = async () => {
     if (!selectedRoundId) return;
     const now = new Date();
-    const nextClosing = getNextTuesday13h(now);
+    const { fechamento: nextClosing, targetDayName } = getClosingForRound(targetSelectedRound, now);
     try {
       await updateDoc(doc(db, 'rodadas', selectedRoundId), {
         status: 'aberta',
         abertura: now.toISOString(),
         fechamento: nextClosing.toISOString()
       });
-      setSuccessMsg(`Mercado da rodada aberto com sucesso! Fechamento na terça-feira às 13:00 (${formatDateTimeDisplay(nextClosing.toISOString())}).`);
+      setSuccessMsg(`Mercado da rodada aberto com sucesso! Fechamento na ${targetDayName} (${formatDateTimeDisplay(nextClosing.toISOString())}).`);
       const rSnapUpdated = await getDocs(collection(db, 'rodadas'));
       const rListUpdated: Rodada[] = [];
       rSnapUpdated.forEach(docObj => {
@@ -800,7 +897,7 @@ export default function AdminResults() {
             {targetSelectedRound.status === 'aberta' ? (
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold bg-cyan-950/80 text-cyan-300 border border-cyan-400/50 shadow-xs shadow-cyan-900/40">
                 <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
-                MERCADO ABERTO • Fechamento: {formatDateTimeDisplay(targetSelectedRound.fechamento)} (Terça 13h)
+                MERCADO ABERTO • Fechamento: {getFriendlyClosingLabel(targetSelectedRound.fechamento)}
               </span>
             ) : (
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-rose-950/80 text-rose-300 border border-rose-500/40 shadow-xs">
@@ -886,37 +983,55 @@ export default function AdminResults() {
       {activeAdminTab === 'apuracao' && (
         <>
 
-      {/* Step 1: Official Matches Input Card (Scores only - Fluid and Simple!) */}
+      {/* Step 1: Official Matches Input Card */}
       <div className="bg-[#080f33]/90 rounded-2xl border border-cyan-500/25 p-6 shadow-2xl backdrop-blur-md space-y-6">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-cyan-500/20 pb-4">
           <div>
             <h4 className="text-sm font-black text-white uppercase tracking-tight flex items-center gap-2">
               <Zap className="w-4 h-4 text-cyan-400" />
-              Passo 1: Placares Oficiais dos Jogos ({officialMatches.length} jogo{officialMatches.length > 1 ? 's' : ''})
+              Passo 1: Confrontos e Placares Oficiais dos Jogos ({officialMatches.length} confronto{officialMatches.length > 1 ? 's' : ''})
             </h4>
-            <p className="text-[11px] text-slate-300 font-medium mt-0.5">
-              Os 5 jogos oficiais da rodada da Champions League são carregados automaticamente dos palpites. Basta ajustar o placar oficial de cada confronto!
+            <p className="text-[11px] text-slate-300 font-medium mt-1">
+              Cadastre os confrontos oficiais com os dois adversários (ex: <strong>Arsenal 2 x 1 Barcelona</strong>). O sistema interpreta automaticamente quem venceu ou empatou e pontua os participantes (tanto quem foi de Arsenal quanto quem foi de Barcelona), <strong>sem diferenciação entre time da casa ou fora</strong>!
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={handleAutoPopulateMatchesFromGuesses}
-              className="text-xs font-bold text-cyan-300 hover:text-white flex items-center gap-1.5 cursor-pointer transition-colors bg-cyan-950/60 hover:bg-cyan-900/70 px-3.5 py-2 rounded-xl border border-cyan-500/40 shadow-xs"
-              title="Detecta e preenche todos os jogos que os participantes palpitaram nesta rodada sem precisar digitar"
+              onClick={handleLoadOfficialFixtures}
+              className="text-xs font-bold text-amber-300 hover:text-white flex items-center gap-1.5 cursor-pointer transition-colors bg-amber-950/60 hover:bg-amber-900/70 px-3 py-2 rounded-xl border border-amber-500/40 shadow-xs"
+              title="Carrega os 5 confrontos oficiais do calendário verificado da UEFA Champions League"
             >
-              <RefreshCw className="w-3.5 h-3.5 text-cyan-400" /> Carregar Jogos dos Palpites
+              <Trophy className="w-3.5 h-3.5 text-amber-400" /> Carregar Calendário UCL
+            </button>
+
+            <button
+              type="button"
+              onClick={handleAutoPopulateMatchesFromGuesses}
+              className="text-xs font-bold text-cyan-300 hover:text-white flex items-center gap-1.5 cursor-pointer transition-colors bg-cyan-950/60 hover:bg-cyan-900/70 px-3 py-2 rounded-xl border border-cyan-500/40 shadow-xs"
+              title="Detecta e preenche todos os jogos que os participantes palpitaram nesta rodada"
+            >
+              <RefreshCw className="w-3.5 h-3.5 text-cyan-400" /> Detectar dos Palpites
             </button>
 
             <button
               type="button"
               onClick={handleAddOfficialMatch}
-              className="text-xs font-bold text-slate-200 hover:text-white flex items-center gap-1.5 cursor-pointer transition-colors bg-[#0f1b52] hover:bg-[#152570] px-3.5 py-2 rounded-xl border border-cyan-500/20 shadow-xs"
-              title="Adicionar um jogo manual à lista"
+              className="text-xs font-bold text-slate-200 hover:text-white flex items-center gap-1.5 cursor-pointer transition-colors bg-[#0f1b52] hover:bg-[#152570] px-3 py-2 rounded-xl border border-cyan-500/20 shadow-xs"
+              title="Adicionar outro confronto manual à lista"
             >
-              <Plus className="w-3.5 h-3.5 text-cyan-400" /> Adicionar Outro Jogo
+              <Plus className="w-3.5 h-3.5 text-cyan-400" /> Adicionar Confronto
             </button>
+          </div>
+        </div>
+
+        {/* Informative Rule Callout */}
+        <div className="bg-[#040924] border border-cyan-500/20 rounded-xl p-3 text-[11px] text-slate-300 flex items-start gap-2.5">
+          <Sparkles className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+          <div>
+            <span className="font-bold text-cyan-300 block mb-0.5">Como funciona a interpretação automática:</span>
+            O participante palpitou apenas indicando o seu vencedor (ex: Hugo escolheu <em>Arsenal 2x1</em>; Marcelo escolheu <em>Barcelona 2x1</em>). Aqui no ADM você coloca o confronto com os dois clubes (ex: <em>Arsenal 2 x 1 Barcelona</em>). O sistema identifica automaticamente o resultado: Hugo ganha +5 pts (resultado + placar exato) e Marcelo ganha 0 pts (Barcelona perdeu de 1x2).
           </div>
         </div>
 
@@ -924,6 +1039,21 @@ export default function AdminResults() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {officialMatches.map((match, idx) => {
             const hasCompleteScore = match.golsMandante !== '' && match.golsVisitante !== '';
+            const gM = parseInt(match.golsMandante || '0', 10);
+            const gV = parseInt(match.golsVisitante || '0', 10);
+            const isHomeWinner = match.timeMandante && match.timeVisitante && hasCompleteScore && gM > gV;
+            const isAwayWinner = match.timeMandante && match.timeVisitante && hasCompleteScore && gV > gM;
+            const isDraw = match.timeMandante && match.timeVisitante && hasCompleteScore && gM === gV;
+
+            // Find guesses from participants referencing either club in this confrontation
+            const relatedGuesses = (match.timeMandante || match.timeVisitante) ? guesses.filter(g => {
+              const p = parseGuess(g);
+              if (!p) return false;
+              const matchesHome = match.timeMandante && (areTeamsMatching(p.timeMandante, match.timeMandante) || (p.timeVisitante && areTeamsMatching(p.timeVisitante, match.timeMandante)));
+              const matchesAway = match.timeVisitante && (areTeamsMatching(p.timeMandante, match.timeVisitante) || (p.timeVisitante && areTeamsMatching(p.timeVisitante, match.timeVisitante)));
+              return matchesHome || matchesAway;
+            }) : [];
+
             return (
               <div 
                 key={idx} 
@@ -937,7 +1067,7 @@ export default function AdminResults() {
                 <div className="flex items-center justify-between pb-2 mb-3 border-b border-cyan-500/15">
                   <span className="text-[11px] font-black uppercase tracking-wider text-cyan-300 font-mono flex items-center gap-1.5">
                     <span className={`w-2 h-2 rounded-full ${hasCompleteScore ? 'bg-cyan-400 shadow-[0_0_8px_#00f0ff]' : 'bg-slate-600'}`}></span>
-                    Jogo {idx + 1}
+                    Confronto {idx + 1}
                   </span>
 
                   <div className="flex items-center gap-2">
@@ -950,8 +1080,8 @@ export default function AdminResults() {
                       <button
                         type="button"
                         onClick={() => handleRemoveOfficialMatch(idx)}
-                        className="p-1 text-slate-400 hover:text-rose-400 transition-colors"
-                        title="Remover jogo"
+                        className="p-1 text-slate-400 hover:text-rose-400 transition-colors cursor-pointer"
+                        title="Remover confronto"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -969,7 +1099,7 @@ export default function AdminResults() {
                         onChange={(e) => handleMatchInputChange(idx, 'timeMandante', e.target.value)}
                         className="w-full p-2 bg-[#080f33] border border-cyan-500/30 rounded-lg text-xs font-bold text-white focus:outline-hidden focus:ring-2 focus:ring-cyan-400"
                       >
-                        <option value="">-- Time Mandante --</option>
+                        <option value="">-- Clube A (Adversário 1) --</option>
                         {TEAMS_LIST.map((team) => (
                           <option key={team} value={team} disabled={team === match.timeVisitante} className="bg-[#080f33] text-white">
                             {team}
@@ -1026,7 +1156,7 @@ export default function AdminResults() {
                         onChange={(e) => handleMatchInputChange(idx, 'timeVisitante', e.target.value)}
                         className="w-full p-2 bg-[#080f33] border border-cyan-500/30 rounded-lg text-xs font-bold text-white focus:outline-hidden focus:ring-2 focus:ring-cyan-400"
                       >
-                        <option value="">-- Time Visitante --</option>
+                        <option value="">-- Clube B (Adversário 2) --</option>
                         {TEAMS_LIST.map((team) => (
                           <option key={team} value={team} disabled={team === match.timeMandante} className="bg-[#080f33] text-white">
                             {team}
@@ -1078,9 +1208,11 @@ export default function AdminResults() {
                         { label: '0x0', m: '0', v: '0' },
                         { label: '1x0', m: '1', v: '0' },
                         { label: '2x1', m: '2', v: '1' },
+                        { label: '3x1', m: '3', v: '1' },
                         { label: '1x1', m: '1', v: '1' },
                         { label: '0x1', m: '0', v: '1' },
-                        { label: '1x2', m: '1', v: '2' }
+                        { label: '1x2', m: '1', v: '2' },
+                        { label: '2x0', m: '2', v: '0' }
                       ].map((preset) => (
                         <button
                           key={preset.label}
@@ -1096,6 +1228,72 @@ export default function AdminResults() {
                       ))}
                     </div>
                   </div>
+
+                  {/* Live Official Match Interpretation Box */}
+                  {match.timeMandante && match.timeVisitante && hasCompleteScore && (
+                    <div className="mt-3 p-3 rounded-lg bg-[#040924] border border-cyan-500/30 space-y-2">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-[10px] font-mono uppercase tracking-wider text-cyan-300 font-bold flex items-center gap-1">
+                          <Trophy className="w-3.5 h-3.5 text-amber-400" /> Interpretação Oficial:
+                        </span>
+                        <span className="text-[11px] font-black font-mono px-2 py-0.5 rounded bg-cyan-950/80 text-cyan-200 border border-cyan-500/30">
+                          {isHomeWinner && `Vitória do ${match.timeMandante} (${gM}x${gV})`}
+                          {isAwayWinner && `Vitória do ${match.timeVisitante} (${gV}x${gM})`}
+                          {isDraw && `Empate (${gM}x${gV})`}
+                        </span>
+                      </div>
+
+                      <p className="text-[10px] text-slate-300">
+                        {isHomeWinner && (
+                          <>
+                            Quem palpitou vitória do <strong className="text-white">{match.timeMandante}</strong> pontua (+3 pts resultado, +2 pts se indicou {gM}x{gV}). Palpites em {match.timeVisitante} ou Empate não pontuam.
+                          </>
+                        )}
+                        {isAwayWinner && (
+                          <>
+                            Quem palpitou vitória do <strong className="text-white">{match.timeVisitante}</strong> pontua (+3 pts resultado, +2 pts se indicou {gV}x{gM}). Palpites em {match.timeMandante} ou Empate não pontuam.
+                          </>
+                        )}
+                        {isDraw && (
+                          <>
+                            Quem palpitou <strong className="text-white">Empate</strong> entre estes clubes pontua (+3 pts resultado, +2 pts se cravou {gM}x{gV}). Palpites em vitória não pontuam.
+                          </>
+                        )}
+                      </p>
+
+                      {/* Quick summary of participants identified for this match */}
+                      {relatedGuesses.length > 0 && (
+                        <div className="pt-2 border-t border-cyan-500/15 space-y-1">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block font-mono">
+                            Palpites identificados neste confronto ({relatedGuesses.length}):
+                          </span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {relatedGuesses.map(g => {
+                              const evalRes = evaluateGuessAgainstResult(g, {
+                                time_mandante: match.timeMandante,
+                                gols_mandante: gM,
+                                time_visitante: match.timeVisitante,
+                                gols_visitante: gV
+                              });
+                              return (
+                                <span 
+                                  key={g.id}
+                                  className={`text-[10px] font-mono px-2 py-0.5 rounded border flex items-center gap-1 ${
+                                    evalRes.pontos > 0 
+                                      ? 'bg-emerald-950/70 border-emerald-500/40 text-emerald-300' 
+                                      : 'bg-slate-900/80 border-slate-700 text-slate-400'
+                                  }`}
+                                  title={`${g.participante}: ${g.palpite} -> ${evalRes.motivo}`}
+                                >
+                                  <strong>{g.participante}</strong> ({g.palpite}): {evalRes.pontos > 0 ? `+${evalRes.pontos} pts` : '0 pts'}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             );

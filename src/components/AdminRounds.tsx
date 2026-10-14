@@ -13,8 +13,10 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Rodada } from '../types';
-import { getNextTuesday13h, formatDateTimeDisplay, getRoundNumber } from '../utils/dateUtils';
-import { Calendar, Plus, Edit, Trash, Check, X, ShieldAlert, Star, Search, Unlock, Lock, FlaskConical, Play, RefreshCw, AlertTriangle } from 'lucide-react';
+import { getNextTuesday13h, getNextWednesday13h, getClosingForNextRound, getClosingForRound, formatDateTimeDisplay, getRoundNumber } from '../utils/dateUtils';
+import { Calendar, Plus, Edit, Trash, Check, X, ShieldAlert, Star, Search, Unlock, Lock, FlaskConical, Play, RefreshCw, AlertTriangle, Sparkles, Globe } from 'lucide-react';
+import { fetchUclFixturesWithAI, REAL_UCL_FIXTURES } from '../constants/uclFixtures';
+import { JogoDisponivel } from '../types';
 
 export default function AdminRounds() {
   const [rounds, setRounds] = useState<Rodada[]>([]);
@@ -38,6 +40,54 @@ export default function AdminRounds() {
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [submitLoading, setSubmitLoading] = useState(false);
+
+  // AI Matches Retrieval state
+  const [aiTargetRoundId, setAiTargetRoundId] = useState<string>('');
+  const [aiDateInput, setAiDateInput] = useState<string>('20/10');
+  const [aiLoading, setAiLoading] = useState<boolean>(false);
+  const [aiFoundMatches, setAiFoundMatches] = useState<JogoDisponivel[]>([]);
+  const [aiMsg, setAiMsg] = useState<string>('');
+
+  const handleSearchMatchesWithAI = async () => {
+    if (!aiTargetRoundId) {
+      setErrorMsg('Selecione uma rodada para vincular os jogos.');
+      return;
+    }
+    setErrorMsg('');
+    setAiMsg('');
+    setAiLoading(true);
+    try {
+      const targetR = rounds.find(r => r.id === aiTargetRoundId);
+      const res = await fetchUclFixturesWithAI(aiDateInput, targetR?.nome);
+      if (res.success && res.matches.length > 0) {
+        setAiFoundMatches(res.matches);
+        setAiMsg(`IA obteve ${res.matches.length} jogos oficiais da rodada de ${aiDateInput} (${res.source === 'gemini_search_grounding' ? 'Busca em tempo real Google Search' : 'Calendário Oficial Verificado UEFA'}).`);
+      } else {
+        setErrorMsg('Nenhum jogo encontrado para esta data.');
+      }
+    } catch (err: any) {
+      setErrorMsg(`Erro na busca de jogos: ${err?.message || err}`);
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const handleSaveAIMatchesToRound = async () => {
+    if (!aiTargetRoundId || aiFoundMatches.length === 0) return;
+    setErrorMsg('');
+    try {
+      await updateDoc(doc(db, 'rodadas', aiTargetRoundId), {
+        jogos_disponiveis: aiFoundMatches,
+        data_jogos: aiDateInput
+      });
+      setSuccessMsg(`Jogos oficiais (${aiFoundMatches.length} partidas) vinculados com sucesso à rodada!`);
+      setAiFoundMatches([]);
+      setAiMsg('');
+      loadRounds();
+    } catch (err: any) {
+      setErrorMsg('Erro ao salvar jogos na rodada.');
+    }
+  };
 
   const loadRounds = async () => {
     setLoading(true);
@@ -203,14 +253,14 @@ export default function AdminRounds() {
 
   const handleQuickOpenRound = async (r: Rodada) => {
     const now = new Date();
-    const nextClosing = getNextTuesday13h(now);
+    const { fechamento: nextClosing, targetDayName } = getClosingForRound(r, now);
     try {
       await updateDoc(doc(db, 'rodadas', r.id), {
         status: 'aberta',
         abertura: now.toISOString(),
         fechamento: nextClosing.toISOString()
       });
-      setSuccessMsg(`Mercado da ${r.nome} ABERTO! Fechamento na terça-feira às 13:00 (${formatDateTimeDisplay(nextClosing.toISOString())}).`);
+      setSuccessMsg(`Mercado da ${r.nome} ABERTO! Fechamento na ${targetDayName} (${formatDateTimeDisplay(nextClosing.toISOString())}).`);
       loadRounds();
     } catch (err) {
       console.error(err);
@@ -342,6 +392,112 @@ export default function AdminRounds() {
           <span>{successMsg}</span>
         </div>
       )}
+
+      {/* SEÇÃO IA: BUSCA AUTOMÁTICA DE JOGOS REAIS COM GOOGLE SEARCH */}
+      <div className="bg-gradient-to-r from-cyan-950/40 via-[#071138] to-blue-950/40 border-2 border-cyan-500/30 rounded-2xl p-5 shadow-xl space-y-4 text-white">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-cyan-500/20 pb-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-cyan-900/60 border border-cyan-400/40 text-cyan-300 rounded-xl">
+              <Sparkles className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h4 className="text-sm font-black uppercase text-white tracking-wide">
+                  IA: Preenchimento Automático dos Jogos Oficiais da Rodada
+                </h4>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-cyan-950 text-cyan-300 border border-cyan-500/40 font-mono">
+                  Google Search Grounding
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 mt-0.5">
+                A IA pesquisa nos sites de esportes (UEFA.com, ESPN, GE) os jogos reais da rodada e os disponibiliza para os participantes escolherem 5 partidas.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <label className="block text-[11px] font-bold text-slate-300 mb-1 font-mono">
+              Vincular à Rodada:
+            </label>
+            <select
+              value={aiTargetRoundId}
+              onChange={(e) => setAiTargetRoundId(e.target.value)}
+              className="w-full bg-[#04081c] border border-cyan-800 text-white rounded-xl text-xs py-2 px-3 font-mono font-bold"
+            >
+              <option value="">Selecione a rodada...</option>
+              {rounds.map(r => (
+                <option key={r.id} value={r.id}>
+                  {r.nome} {r.status === 'aberta' ? '(Aberta)' : '(Encerrada)'}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-bold text-slate-300 mb-1 font-mono">
+              Data da Rodada (ex: 20/10 ou 21/10):
+            </label>
+            <input
+              type="text"
+              placeholder="Ex: 20/10 ou 21/10"
+              value={aiDateInput}
+              onChange={(e) => setAiDateInput(e.target.value)}
+              className="w-full bg-[#04081c] border border-cyan-800 text-white rounded-xl text-xs py-2 px-3 font-mono font-bold placeholder:text-slate-500"
+            />
+          </div>
+
+          <div className="flex items-end">
+            <button
+              type="button"
+              disabled={aiLoading || !aiTargetRoundId}
+              onClick={handleSearchMatchesWithAI}
+              className="w-full py-2 px-3 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 disabled:bg-slate-800 disabled:text-slate-500 rounded-xl text-xs font-black uppercase text-white flex items-center justify-center gap-1.5 cursor-pointer shadow-md shadow-cyan-950/60"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              {aiLoading ? 'Buscando nos Sites...' : 'Buscar Jogos Reais com IA'}
+            </button>
+          </div>
+        </div>
+
+        {aiMsg && (
+          <div className="p-3 bg-cyan-950/80 border border-cyan-500/40 rounded-xl text-xs text-cyan-200 font-mono">
+            {aiMsg}
+          </div>
+        )}
+
+        {aiFoundMatches.length > 0 && (
+          <div className="space-y-3 p-3 bg-[#03071c] rounded-xl border border-cyan-500/30">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-black text-cyan-300 font-mono">
+                Confrontos Reais Encontrados ({aiFoundMatches.length} jogos):
+              </span>
+              <button
+                type="button"
+                onClick={handleSaveAIMatchesToRound}
+                className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs rounded-lg cursor-pointer flex items-center gap-1"
+              >
+                <Check className="w-3 h-3" />
+                Salvar e Disponibilizar nesta Rodada
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-48 overflow-y-auto pr-1">
+              {aiFoundMatches.map((m, idx) => (
+                <div key={idx} className="p-2 rounded bg-[#071138] border border-cyan-900/60 text-xs flex items-center justify-between">
+                  <span className="font-bold text-white">
+                    {m.time_mandante} vs {m.time_visitante}
+                  </span>
+                  <span className="text-[10px] text-cyan-400 font-mono">
+                    {m.horario}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* SEÇÃO EXCLUSIVA: RODADA DE TESTE */}
       <div className="bg-gradient-to-r from-purple-50 via-white to-purple-50/50 border-2 border-purple-200 rounded-2xl p-6 shadow-xs space-y-4">

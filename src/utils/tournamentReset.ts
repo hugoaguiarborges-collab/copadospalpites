@@ -1,9 +1,10 @@
-import { collection, getDocs, updateDoc, doc, deleteDoc, setDoc, getDoc } from 'firebase/firestore';
+import { collection, getDocs, updateDoc, doc, deleteDoc, setDoc, getDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
-import { getNextTuesday13h } from './dateUtils';
+import { getNextTuesday13h, getNextWednesday13h } from './dateUtils';
+import { REAL_UCL_FIXTURES } from '../constants/uclFixtures';
 
 export const TOTAL_RODADAS = 50;
-export const TOURNAMENT_VERSION = 'campeonato_50_rodadas_2026';
+export const TOURNAMENT_VERSION = 'campeonato_50_rodadas_2026_v10';
 
 export const INITIAL_PARTICIPANTS_SCORES = [
   { id: 'everton', nome: 'Everton', pontos: 58, acertos_placar: 1 },
@@ -16,104 +17,117 @@ export const INITIAL_PARTICIPANTS_SCORES = [
 ];
 
 export async function resetTournamentToNewChampionship(): Promise<void> {
-  console.log(`Iniciando configuração do Novo Campeonato com ${TOTAL_RODADAS} rodadas e pontuações iniciais oficiais...`);
+  console.log(`Configurando Novo Campeonato com partidas reais da Champions League via lote atômico...`);
 
-  // 1. Configurar pontuação inicial oficial de todos os participantes
-  try {
-    for (const p of INITIAL_PARTICIPANTS_SCORES) {
-      await setDoc(doc(db, 'participantes', p.id), {
-        nome: p.nome,
-        pontos: p.pontos,
-        acertos_placar: p.acertos_placar
-      }, { merge: true });
-    }
-  } catch (err) {
-    console.warn("Erro ao configurar participantes iniciais:", err);
-  }
-
-  // 2. Limpar logs antigos de pontuação
-  try {
-    const scoreSnap = await getDocs(collection(db, 'pontuacoes'));
-    const scoreDeletes = scoreSnap.docs.map(sDoc => 
-      deleteDoc(doc(db, 'pontuacoes', sDoc.id))
-    );
-    await Promise.all(scoreDeletes);
-  } catch (err) {
-    console.warn("Erro ao limpar pontuações:", err);
-  }
-
-  // 3. Limpar palpites antigos
-  try {
-    const guessSnap = await getDocs(collection(db, 'palpites'));
-    const guessDeletes = guessSnap.docs.map(gDoc => 
-      deleteDoc(doc(db, 'palpites', gDoc.id))
-    );
-    await Promise.all(guessDeletes);
-  } catch (err) {
-    console.warn("Erro ao limpar palpites:", err);
-  }
-
-  // 4. Limpar rodadas antigas e recriar as 50 rodadas oficiais
-  try {
-    const roundSnap = await getDocs(collection(db, 'rodadas'));
-    const roundDeletes = roundSnap.docs.map(rDoc => 
-      deleteDoc(doc(db, 'rodadas', rDoc.id))
-    );
-    await Promise.all(roundDeletes);
-  } catch (err) {
-    console.warn("Erro ao limpar rodadas:", err);
-  }
-
-  // 5. Limpar resultados oficiais antigos
-  try {
-    const resultsSnap = await getDocs(collection(db, 'resultados_oficiais'));
-    const resDeletes = resultsSnap.docs.map(rDoc => deleteDoc(doc(db, 'resultados_oficiais', rDoc.id)));
-    await Promise.all(resDeletes);
-  } catch (e) {
-    // collection may not exist yet
-  }
-
-  // Data atual de início (hoje)
   const now = new Date();
   const startISO = now.toISOString();
 
-  // Fechamento da Rodada 1: SEMPRE na terça-feira às 13:00!
-  const round1Deadline = getNextTuesday13h(now);
+  // Fechamento de quarta-feira às 13:00 (HOJE para a Rodada 1 de quarta-feira)
+  const wednesdayTodayDeadline = getNextWednesday13h(now);
+  // Fechamento da próxima terça-feira às 13:00
+  const nextTuesdayDeadline = getNextTuesday13h(now);
 
-  // Criar Rodada 1 (Aberta imediatamente a partir de agora)
-  await setDoc(doc(db, 'rodadas', 'round-1'), {
-    nome: 'Rodada 1',
-    abertura: startISO,
-    fechamento: round1Deadline.toISOString(),
-    status: 'aberta'
-  });
+  const batch = writeBatch(db);
 
-  // Criar Rodadas 2 a 50 (total de 50 rodadas)
-  // Cada rodada subsequente tem seu fechamento planejado para a terça-feira seguinte às 13:00
-  let previousClosing = new Date(round1Deadline);
-  for (let i = 2; i <= TOTAL_RODADAS; i++) {
-    const nextClosing = new Date(previousClosing.getTime() + 7 * 24 * 60 * 60 * 1000);
-    // Garantir que a hora é 13:00:00
-    nextClosing.setHours(13, 0, 0, 0);
-
-    await setDoc(doc(db, 'rodadas', `round-${i}`), {
-      nome: `Rodada ${i}`,
-      abertura: previousClosing.toISOString(),
-      fechamento: nextClosing.toISOString(),
-      status: 'encerrada' // Mercado fechado até o administrador atualizar os placares da rodada anterior
-    });
-
-    previousClosing = nextClosing;
+  // 1. Configurar participantes no lote com pontuações oficiais
+  for (const p of INITIAL_PARTICIPANTS_SCORES) {
+    batch.set(doc(db, 'participantes', p.id), {
+      nome: p.nome,
+      pontos: p.pontos,
+      acertos_placar: p.acertos_placar
+    }, { merge: true });
   }
 
-  // Registrar marcador de sistema
-  await setDoc(doc(db, 'sistema', 'config'), {
+  // 2. Rodada 1 (Terça-feira) - Ontem, já apurada
+  batch.set(doc(db, 'rodadas', 'round-1-terca'), {
+    nome: 'Rodada 1 (Terça-feira)',
+    data_jogos: '20/10',
+    jogos_disponiveis: REAL_UCL_FIXTURES['20/10'],
+    abertura: new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString(),
+    fechamento: new Date(now.getTime() - 12 * 60 * 60 * 1000).toISOString(),
+    status: 'encerrada',
+    apurada: true
+  });
+
+  // 3. Rodada 1 (Quarta-feira) - HOJE! Aberta, fecha hoje quarta-feira às 13:00!
+  batch.set(doc(db, 'rodadas', 'round-1-quarta'), {
+    nome: 'Rodada 1 (Quarta-feira)',
+    data_jogos: '21/10',
+    jogos_disponiveis: REAL_UCL_FIXTURES['21/10'],
+    abertura: startISO,
+    fechamento: wednesdayTodayDeadline.toISOString(),
+    status: 'aberta',
+    apurada: false
+  });
+
+  // Também manter round-1 sincronizado como Rodada 1 (Quarta-feira) para máxima compatibilidade
+  batch.set(doc(db, 'rodadas', 'round-1'), {
+    nome: 'Rodada 1 (Quarta-feira)',
+    data_jogos: '21/10',
+    jogos_disponiveis: REAL_UCL_FIXTURES['21/10'],
+    abertura: startISO,
+    fechamento: wednesdayTodayDeadline.toISOString(),
+    status: 'aberta',
+    apurada: false
+  });
+
+  // 4. Rodada 2 (Terça e Quarta da semana que vem)
+  batch.set(doc(db, 'rodadas', 'round-2-terca'), {
+    nome: 'Rodada 2 (Terça-feira)',
+    data_jogos: '20/10',
+    jogos_disponiveis: REAL_UCL_FIXTURES['20/10'],
+    abertura: wednesdayTodayDeadline.toISOString(),
+    fechamento: nextTuesdayDeadline.toISOString(),
+    status: 'encerrada',
+    apurada: false
+  });
+
+  const nextWedAfterTue = new Date(nextTuesdayDeadline.getTime() + 24 * 60 * 60 * 1000);
+  nextWedAfterTue.setHours(13, 0, 0, 0);
+
+  batch.set(doc(db, 'rodadas', 'round-2-quarta'), {
+    nome: 'Rodada 2 (Quarta-feira)',
+    data_jogos: '21/10',
+    jogos_disponiveis: REAL_UCL_FIXTURES['21/10'],
+    abertura: nextTuesdayDeadline.toISOString(),
+    fechamento: nextWedAfterTue.toISOString(),
+    status: 'encerrada',
+    apurada: false
+  });
+
+  // 5. Rodadas subsequentes (3 a 20)
+  for (let i = 3; i <= 20; i++) {
+    batch.set(doc(db, 'rodadas', `round-${i}-terca`), {
+      nome: `Rodada ${i} (Terça-feira)`,
+      data_jogos: '20/10',
+      jogos_disponiveis: REAL_UCL_FIXTURES['20/10'],
+      abertura: nextTuesdayDeadline.toISOString(),
+      fechamento: nextTuesdayDeadline.toISOString(),
+      status: 'encerrada',
+      apurada: false
+    });
+    batch.set(doc(db, 'rodadas', `round-${i}-quarta`), {
+      nome: `Rodada ${i} (Quarta-feira)`,
+      data_jogos: '21/10',
+      jogos_disponiveis: REAL_UCL_FIXTURES['21/10'],
+      abertura: nextWedAfterTue.toISOString(),
+      fechamento: nextWedAfterTue.toISOString(),
+      status: 'encerrada',
+      apurada: false
+    });
+  }
+
+  // 6. Configuração do sistema
+  batch.set(doc(db, 'sistema', 'config'), {
     campeonato_ativo: TOURNAMENT_VERSION,
     data_inicio: startISO,
     total_rodadas: TOTAL_RODADAS,
-    regra_fechamento: 'terca_13h',
-    versao: '3.0'
+    regra_fechamento: 'terca_e_quarta_13h',
+    versao: '10.0'
   });
+
+  // Gravar tudo em UMA ÚNICA chamada de rede atômica super rápida
+  await batch.commit();
 
   // Limpar caches locais do navegador
   try {
@@ -125,23 +139,29 @@ export async function resetTournamentToNewChampionship(): Promise<void> {
       }
     }
     keysToRemove.forEach(k => localStorage.removeItem(k));
-  } catch (err) {
-    console.warn("Storage reset warning:", err);
-  }
+  } catch {}
 
-  console.log(`Campeonato configurado com sucesso! Total de ${TOTAL_RODADAS} rodadas geradas com fechamento às terças 13h.`);
+  console.log('Campeonato configurado com sucesso! Rodada 1 de Quarta-feira ativa com fechamento hoje às 13:00!');
 }
 
 export async function checkAndEnsureNewTournament(): Promise<boolean> {
   try {
-    const configDoc = await getDoc(doc(db, 'sistema', 'config'));
-    if (!configDoc.exists() || configDoc.data()?.campeonato_ativo !== TOURNAMENT_VERSION) {
-      await resetTournamentToNewChampionship();
-      return true;
-    }
-    return false;
+    const timeoutPromise = new Promise<boolean>((_, reject) => 
+      setTimeout(() => reject(new Error('Timeout na checagem de campeonato')), 3000)
+    );
+
+    const checkPromise = (async () => {
+      const configDoc = await getDoc(doc(db, 'sistema', 'config'));
+      if (!configDoc.exists() || configDoc.data()?.campeonato_ativo !== TOURNAMENT_VERSION) {
+        await resetTournamentToNewChampionship();
+        return true;
+      }
+      return false;
+    })();
+
+    return await Promise.race([checkPromise, timeoutPromise]);
   } catch (err) {
-    console.error("Erro ao verificar novo campeonato:", err);
+    console.warn("Verificação rápida do campeonato concluída (segurança):", err);
     return false;
   }
 }
