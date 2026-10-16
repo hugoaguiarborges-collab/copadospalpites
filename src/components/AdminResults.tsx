@@ -12,11 +12,12 @@ import {
   setDoc
 } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Rodada, Palpite, Participante, JogoResultadoOficial } from '../types';
+import { Rodada, Palpite, Participante, JogoResultadoOficial, JogoDisponivel } from '../types';
 import { TEAMS_LIST } from '../constants/teams';
 import { REAL_UCL_FIXTURES, getFixturesForRoundDate } from '../constants/uclFixtures';
 import { evaluateGuessAgainstResult, parseGuess, normalizeTeamName, areTeamsMatching } from '../utils/scoreCalculator';
 import { getNextTuesday13h, getNextWednesday13h, getClosingForNextRound, getClosingForRound, formatDateTimeDisplay, getRoundNumber, isTuesdayMatchday, getFriendlyClosingLabel } from '../utils/dateUtils';
+import { restoreOfficialGuesses } from '../utils/backupGuesses';
 import TabelaParticipacao from './TabelaParticipacao';
 import { 
   Check, 
@@ -38,7 +39,8 @@ import {
   Minus,
   RefreshCw,
   SlidersHorizontal,
-  Edit
+  Edit,
+  RotateCcw
 } from 'lucide-react';
 import { UclStarball, UclTrophy, UclBadge } from './UclAssets';
 
@@ -102,9 +104,11 @@ export default function AdminResults() {
         setRounds(rList);
         
         if (rList.length > 0 && !selectedRoundId) {
-          // Select open round or first round
-          const openOrFirst = rList.find(r => r.status === 'aberta') || rList[0];
-          setSelectedRoundId(openOrFirst.id);
+          // Select round awaiting evaluation (e.g. closed round not yet apurada), or open round, or first round
+          const awaitingEvaluation = rList.find(r => !r.is_test && r.status === 'encerrada' && !r.apurada);
+          const openRound = rList.find(r => !r.is_test && r.status === 'aberta');
+          const defaultRound = awaitingEvaluation || openRound || rList.find(r => !r.is_test) || rList[0];
+          setSelectedRoundId(defaultRound.id);
         }
 
         const pSnap = await getDocs(collection(db, 'participantes'));
@@ -121,77 +125,82 @@ export default function AdminResults() {
   }, []);
 
   // Function to extract unique matches from guesses in this round
+  // ONLY extracts matches that participants actually guessed!
   const extractMatchesFromGuesses = (guessList: Palpite[]): MatchResultInput[] => {
-    const uniqueMatches: MatchResultInput[] = [];
-    const seenKeys = new Set<string>();
+    if (!guessList || guessList.length === 0) return [];
 
-    // 1. Draw guesses or full-match guesses with both clubs specified
+    const targetR = rounds.find(r => r.id === selectedRoundId);
+    
+    // Candidate fixtures pool:
+    // 1. Matches configured on this round (jogos_disponiveis or jogos)
+    const roundFixtures: JogoDisponivel[] = targetR?.jogos_disponiveis || (targetR as any)?.jogos || [];
+    
+    // 2. All UCL verified calendars across all matchdays
+    const allKnownFixtures: JogoDisponivel[] = [
+      ...roundFixtures,
+      ...(REAL_UCL_FIXTURES['21/10'] || []),
+      ...(REAL_UCL_FIXTURES['20/10'] || []),
+      ...(REAL_UCL_FIXTURES['22/10'] || []),
+      ...(REAL_UCL_FIXTURES['23/10'] || [])
+    ];
+
+    // For every guess, find its match
+    const matchMap = new Map<string, { match: MatchResultInput; guessCount: number }>();
+
     for (const g of guessList) {
       const parsed = parseGuess(g);
-      if (parsed && parsed.timeMandante && parsed.timeVisitante) {
-        const canonicalHome = TEAMS_LIST.find(t => areTeamsMatching(t, parsed.timeMandante)) || parsed.timeMandante;
-        const canonicalAway = TEAMS_LIST.find(t => areTeamsMatching(t, parsed.timeVisitante)) || parsed.timeVisitante;
+      if (!parsed) continue;
+
+      let home = '';
+      let away = '';
+
+      if (parsed.timeMandante && parsed.timeVisitante) {
+        // Both clubs specified directly in the guess (e.g. draw or full match)
+        home = parsed.timeMandante;
+        away = parsed.timeVisitante;
+      } else if (parsed.timeMandante) {
+        // Winner-only prediction (e.g. "FC Barcelona")
+        const winner = parsed.timeMandante;
+        // Look up which confrontation contains this club
+        const foundFixture = allKnownFixtures.find(f =>
+          areTeamsMatching(f.time_mandante, winner) || areTeamsMatching(f.time_visitante, winner)
+        );
+
+        if (foundFixture) {
+          home = foundFixture.time_mandante;
+          away = foundFixture.time_visitante;
+        } else {
+          // Club with no opponent found yet in calendar
+          home = winner;
+          away = '';
+        }
+      }
+
+      if (home) {
+        // Canonicalize names using TEAMS_LIST if possible
+        const canHome = TEAMS_LIST.find(t => areTeamsMatching(t, home)) || home;
+        const canAway = away ? (TEAMS_LIST.find(t => areTeamsMatching(t, away)) || away) : '';
         
-        const matchKey = `${normalizeTeamName(canonicalHome)}__vs__${normalizeTeamName(canonicalAway)}`;
-        const reverseKey = `${normalizeTeamName(canonicalAway)}__vs__${normalizeTeamName(canonicalHome)}`;
-
-        if (!seenKeys.has(matchKey) && !seenKeys.has(reverseKey)) {
-          seenKeys.add(matchKey);
-          uniqueMatches.push({
-            timeMandante: canonicalHome,
-            timeVisitante: canonicalAway,
-            golsMandante: '',
-            golsVisitante: ''
+        const key = [normalizeTeamName(canHome), normalizeTeamName(canAway)].sort().join('__vs__');
+        if (!matchMap.has(key)) {
+          matchMap.set(key, {
+            match: {
+              timeMandante: canHome,
+              timeVisitante: canAway,
+              golsMandante: '',
+              golsVisitante: ''
+            },
+            guessCount: 0
           });
         }
+        matchMap.get(key)!.guessCount++;
       }
     }
 
-    // 2. Cross-reference winner guesses with verified UCL calendar fixtures
-    const targetR = rounds.find(r => r.id === selectedRoundId);
-    const fixtures = getFixturesForRoundDate(targetR?.nome || targetR?.id || '20/10');
-    for (const f of fixtures) {
-      const matchKey = `${normalizeTeamName(f.time_mandante)}__vs__${normalizeTeamName(f.time_visitante)}`;
-      const reverseKey = `${normalizeTeamName(f.time_visitante)}__vs__${normalizeTeamName(f.time_mandante)}`;
-
-      if (!seenKeys.has(matchKey) && !seenKeys.has(reverseKey)) {
-        const hasGuess = guessList.some(g => {
-          const p = parseGuess(g);
-          if (!p) return false;
-          return areTeamsMatching(p.timeMandante, f.time_mandante) ||
-                 areTeamsMatching(p.timeMandante, f.time_visitante) ||
-                 (p.timeVisitante && (areTeamsMatching(p.timeVisitante, f.time_mandante) || areTeamsMatching(p.timeVisitante, f.time_visitante)));
-        });
-
-        if (hasGuess) {
-          seenKeys.add(matchKey);
-          uniqueMatches.push({
-            timeMandante: f.time_mandante,
-            timeVisitante: f.time_visitante,
-            golsMandante: '',
-            golsVisitante: ''
-          });
-        }
-      }
-    }
-
-    // 3. If still fewer than 5 matches, fill with official round fixtures so admin has 5 ready matches
-    for (const f of fixtures) {
-      if (uniqueMatches.length >= 5) break;
-      const matchKey = `${normalizeTeamName(f.time_mandante)}__vs__${normalizeTeamName(f.time_visitante)}`;
-      const reverseKey = `${normalizeTeamName(f.time_visitante)}__vs__${normalizeTeamName(f.time_mandante)}`;
-      if (!seenKeys.has(matchKey) && !seenKeys.has(reverseKey)) {
-        seenKeys.add(matchKey);
-        uniqueMatches.push({
-          timeMandante: f.time_mandante,
-          timeVisitante: f.time_visitante,
-          golsMandante: '',
-          golsVisitante: ''
-        });
-      }
-    }
-
-    return uniqueMatches;
+    // Sort detected matches by number of participant guesses descending (most palpitated first)
+    return Array.from(matchMap.values())
+      .sort((a, b) => b.guessCount - a.guessCount)
+      .map(entry => entry.match);
   };
 
   // Load guesses and existing official results when selected round changes
@@ -200,16 +209,32 @@ export default function AdminResults() {
 
     setLoading(true);
     try {
+      const targetRId = selectedRoundId;
+      const roundIds = [targetRId];
+      if (targetRId === 'round-1') roundIds.push('round-1-quarta');
+      if (targetRId === 'round-1-quarta') roundIds.push('round-1');
+
       const q = query(
         collection(db, 'palpites'),
-        where('rodada', '==', selectedRoundId),
+        where('rodada', 'in', roundIds),
         orderBy('data_hora_envio', 'asc')
       );
       const snap = await getDocs(q);
-      const list: Palpite[] = [];
+      let list: Palpite[] = [];
       snap.forEach((docObj) => {
         list.push({ id: docObj.id, ...docObj.data() } as Palpite);
       });
+
+      // Auto-healing: If guesses are 0 for round-1, restore them!
+      if (list.length === 0 && (targetRId === 'round-1' || targetRId === 'round-1-quarta')) {
+        await restoreOfficialGuesses(targetRId);
+        const refetchSnap = await getDocs(q);
+        list = [];
+        refetchSnap.forEach((docObj) => {
+          list.push({ id: docObj.id, ...docObj.data() } as Palpite);
+        });
+      }
+
       setGuesses(list);
 
       // Pre-fill individual captain goals from already saved guesses
@@ -223,11 +248,23 @@ export default function AdminResults() {
         return nextMap;
       });
 
-      // Check if this round already has official matches registered
+      // Check if this round already has official matches registered that match the actual guesses
       const targetR = rounds.find(r => r.id === selectedRoundId);
-      if (targetR?.jogos_oficiais && targetR.jogos_oficiais.length > 0) {
+      const hasRealSavedMatches = Boolean(
+        targetR?.apurada &&
+        targetR?.jogos_oficiais &&
+        targetR.jogos_oficiais.length > 0 &&
+        targetR.jogos_oficiais.some(jo =>
+          list.some(g => {
+            const p = parseGuess(g);
+            return p && (areTeamsMatching(p.timeMandante, jo.time_mandante) || areTeamsMatching(p.timeMandante, jo.time_visitante));
+          })
+        )
+      );
+
+      if (hasRealSavedMatches) {
         setOfficialMatches(prev => {
-          return targetR.jogos_oficiais!.map(jo => {
+          return targetR!.jogos_oficiais!.map(jo => {
             const existing = prev.find(p => 
               (areTeamsMatching(p.timeMandante, jo.time_mandante) && areTeamsMatching(p.timeVisitante, jo.time_visitante)) ||
               (areTeamsMatching(p.timeMandante, jo.time_visitante) && areTeamsMatching(p.timeVisitante, jo.time_mandante))
@@ -241,55 +278,28 @@ export default function AdminResults() {
           });
         });
       } else {
-        const qOficiais = query(
-          collection(db, 'resultados_oficiais'),
-          where('rodada_id', '==', selectedRoundId)
-        );
-        const snapOficiais = await getDocs(qOficiais);
-        if (!snapOficiais.empty) {
-          const loaded: MatchResultInput[] = [];
-          snapOficiais.forEach(d => {
-            const data = d.data();
-            loaded.push({
-              timeMandante: data.time_mandante || '',
-              timeVisitante: data.time_visitante || '',
-              golsMandante: String(data.gols_mandante ?? ''),
-              golsVisitante: String(data.gols_visitante ?? '')
+        // AUTO-DISCOVERY: Discover the exact real matches from participants' guesses!
+        const autoDiscovered = extractMatchesFromGuesses(list);
+        if (autoDiscovered.length > 0) {
+          setOfficialMatches(prev => {
+            return autoDiscovered.map(ad => {
+              const existing = prev.find(p => 
+                (areTeamsMatching(p.timeMandante, ad.timeMandante) && areTeamsMatching(p.timeVisitante, ad.timeVisitante)) ||
+                (areTeamsMatching(p.timeMandante, ad.timeVisitante) && areTeamsMatching(p.timeVisitante, ad.timeMandante))
+              );
+              return existing && (existing.golsMandante !== '' || existing.golsVisitante !== '') 
+                ? { ...ad, golsMandante: existing.golsMandante, golsVisitante: existing.golsVisitante } 
+                : ad;
             });
           });
-          if (loaded.length > 0) {
-            setOfficialMatches(prev => {
-              return loaded.map(l => {
-                const existing = prev.find(p => 
-                  (areTeamsMatching(p.timeMandante, l.timeMandante) && areTeamsMatching(p.timeVisitante, l.timeVisitante)) ||
-                  (areTeamsMatching(p.timeMandante, l.timeVisitante) && areTeamsMatching(p.timeVisitante, l.timeMandante))
-                );
-                return existing && (existing.golsMandante !== '' || existing.golsVisitante !== '') ? existing : l;
-              });
-            });
-          }
         } else {
-          // AUTO-DISCOVERY: No official results saved yet, automatically discover matches from participants' guesses and official fixtures!
-          const autoDiscovered = extractMatchesFromGuesses(list);
-          if (autoDiscovered.length > 0) {
-            setOfficialMatches(prev => {
-              return autoDiscovered.map(ad => {
-                const existing = prev.find(p => 
-                  (areTeamsMatching(p.timeMandante, ad.timeMandante) && areTeamsMatching(p.timeVisitante, ad.timeVisitante)) ||
-                  (areTeamsMatching(p.timeMandante, ad.timeVisitante) && areTeamsMatching(p.timeVisitante, ad.timeMandante))
-                );
-                return existing && (existing.golsMandante !== '' || existing.golsVisitante !== '') ? existing : ad;
-              });
-            });
-          } else {
-            setOfficialMatches([
-              { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '' },
-              { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '' },
-              { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '' },
-              { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '' },
-              { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '' }
-            ]);
-          }
+          setOfficialMatches([
+            { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '' },
+            { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '' },
+            { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '' },
+            { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '' },
+            { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '' }
+          ]);
         }
       }
     } catch (err) {
@@ -309,12 +319,14 @@ export default function AdminResults() {
             (areTeamsMatching(p.timeMandante, ad.timeMandante) && areTeamsMatching(p.timeVisitante, ad.timeVisitante)) ||
             (areTeamsMatching(p.timeMandante, ad.timeVisitante) && areTeamsMatching(p.timeVisitante, ad.timeMandante))
           );
-          return existing && (existing.golsMandante !== '' || existing.golsVisitante !== '') ? existing : ad;
+          return existing && (existing.golsMandante !== '' || existing.golsVisitante !== '') 
+            ? { ...ad, golsMandante: existing.golsMandante, golsVisitante: existing.golsVisitante } 
+            : ad;
         });
       });
-      setSuccessMsg(`Confrontos preenchidos automaticamente com base nos palpites e calendário oficial (${auto.length} confrontos carregados). Basta ajustar os placares!`);
+      setSuccessMsg(`✅ ${auto.length} confrontos oficiais detectados com sucesso a partir dos palpites dos participantes! Basta ajustar os placares.`);
     } else {
-      setErrorMsg('Nenhum confronto identificado para esta rodada.');
+      setErrorMsg('Nenhum confronto identificado para esta rodada. Verifique se há palpites enviados.');
     }
   };
 
@@ -386,10 +398,15 @@ export default function AdminResults() {
   }, {} as Record<string, Palpite[]>);
 
   for (const [pName, pGuesses] of Object.entries(participantGroups)) {
-    const sorted = [...pGuesses].sort((a,b) => new Date(a.data_hora_envio).getTime() - new Date(b.data_hora_envio).getTime());
-    const uploadTimestamps = Array.from(new Set(sorted.map(g => g.data_hora_envio)));
-    const latestTimestamp = uploadTimestamps[uploadTimestamps.length - 1];
-    validGuessesByParticipant[pName] = sorted.filter(g => g.data_hora_envio === latestTimestamp);
+    if (pGuesses.length <= 5) {
+      validGuessesByParticipant[pName] = pGuesses;
+    } else {
+      const sorted = [...pGuesses].sort((a,b) => new Date(a.data_hora_envio).getTime() - new Date(b.data_hora_envio).getTime());
+      const uploadTimestamps = Array.from(new Set(sorted.map(g => g.data_hora_envio)));
+      const latestTimestamp = uploadTimestamps[uploadTimestamps.length - 1];
+      const latestBatch = sorted.filter(g => g.data_hora_envio === latestTimestamp);
+      validGuessesByParticipant[pName] = latestBatch.length > 0 ? latestBatch : sorted.slice(-5);
+    }
   }
 
   // Pre-calculate automatic preview for all valid matches
@@ -849,6 +866,20 @@ export default function AdminResults() {
     }
   };
 
+  const handleRestoreGuesses = async () => {
+    setErrorMsg('');
+    setSuccessMsg('');
+    try {
+      const targetRId = selectedRoundId || 'round-1';
+      const count = await restoreOfficialGuesses(targetRId);
+      await loadGuessesForSelectedRound();
+      setSuccessMsg(`✅ ${count} palpites oficiais dos 7 participantes recuperados com sucesso para a ${targetSelectedRound?.nome || 'rodada'}!`);
+    } catch (err: any) {
+      setErrorMsg(`Erro ao recuperar palpites: ${err?.message || err}`);
+    }
+  };
+
+
   return (
     <div className="space-y-8">
       {/* Title - UEFA Match Control Room */}
@@ -925,6 +956,15 @@ export default function AdminResults() {
                 <Lock className="w-3.5 h-3.5" /> Fechar Mercado Agora
               </button>
             )}
+
+            <button
+              type="button"
+              onClick={handleRestoreGuesses}
+              className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white text-xs font-black uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-all shadow-md shadow-amber-950/50"
+              title="Recupera todos os palpites oficiais apagados dos 7 participantes"
+            >
+              <RotateCcw className="w-3.5 h-3.5" /> Recuperar Palpites ({guesses.length})
+            </button>
           </div>
         )}
       </div>
@@ -1315,7 +1355,7 @@ export default function AdminResults() {
               </p>
             </div>
 
-            {/* Quick Metrics Badges */}
+            {/* Quick Metrics Badges & Direct Launch Button */}
             <div className="flex flex-wrap items-center gap-2">
               <span className="px-2.5 py-1 bg-[#050b28] rounded-lg text-[11px] font-bold text-slate-300 border border-cyan-500/20">
                 👥 {totalParticipantesApurados} Participantes
@@ -1329,6 +1369,26 @@ export default function AdminResults() {
               <span className="px-2.5 py-1 bg-gradient-to-r from-cyan-950 to-blue-950 rounded-lg text-[11px] font-black text-cyan-200 border border-cyan-400/40">
                 🏆 +{totalPontosADistribuir} pts a Creditar
               </span>
+              <button
+                type="button"
+                onClick={handleExecuteAutomaticScoring}
+                disabled={processingAuto || evaluationPreview.length === 0}
+                className="px-4 py-2 bg-gradient-to-r from-emerald-500 via-teal-600 to-cyan-600 hover:from-emerald-400 hover:to-teal-500 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer shadow-lg shadow-emerald-950/80 disabled:opacity-40 disabled:cursor-not-allowed"
+                title="Lança todas as pontuações calculadas no banco de uma só vez e reabre o mercado automaticamente"
+              >
+                <Zap className="w-4 h-4 fill-white" />
+                {processingAuto ? 'Lançando...' : 'Lançar Todas as Pontuações'}
+              </button>
+            </div>
+          </div>
+
+          {/* Real-time Guidance Banner */}
+          <div className="bg-[#050b28] border border-cyan-500/30 rounded-xl p-3 text-xs text-slate-200 flex items-start gap-2.5">
+            <Sparkles className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+            <div>
+              <span className="font-extrabold text-cyan-300 block mb-0.5">Apuração Automática em Tempo Real:</span>
+              Os palpites já estão atualizados automaticamente de acordo com os placares reais que você definiu no Passo 1.
+              Basta ajustar os gols dos capitães (se algum fez gol) e clicar em <strong>"Lançar Todas as Pontuações da Rodada de Uma Vez"</strong>. Não é necessário salvar palpite por palpite individualmente. Ao lançar, todas as pontuações são gravadas e o mercado reabre automaticamente!
             </div>
           </div>
 
@@ -1626,27 +1686,18 @@ export default function AdminResults() {
                           )}
                         </div>
 
-                        {/* Calculated Points Breakdown & Individual Save */}
-                        <div className="lg:col-span-3 flex flex-col sm:flex-row lg:flex-col items-start lg:items-end justify-between gap-2">
-                          <div className="text-right">
-                            <div className="text-[10px] font-mono text-cyan-300/70 font-bold">
-                              Jogo: +{(det.pontosResultado || 0) + (det.pontosPlacar || 0)} | Capitão: +{det.pontosCapitao || 0}
-                            </div>
-                            <div className="text-base font-black font-mono text-cyan-400">
-                              +{det.pontos} pt{det.pontos !== 1 ? 's' : ''}
-                            </div>
+                        {/* Calculated Points Breakdown */}
+                        <div className="lg:col-span-3 flex flex-col items-start lg:items-end justify-center gap-1">
+                          <div className="text-[10px] font-mono text-cyan-300/70 font-bold">
+                            Jogo: +{(det.pontosResultado || 0) + (det.pontosPlacar || 0)} | Capitão: +{det.pontosCapitao || 0}
                           </div>
-
-                          <button
-                            type="button"
-                            onClick={() => handleSaveIndividualGuess(det.guessId, item.participante, det)}
-                            disabled={savingGuessId === det.guessId}
-                            className="px-3.5 py-1.5 bg-[#0f1b52] hover:bg-cyan-900 active:bg-black text-cyan-200 hover:text-white text-[11px] font-bold rounded-lg flex items-center gap-1.5 cursor-pointer border border-cyan-500/30 shadow-xs transition-colors disabled:opacity-50"
-                            title="Salvar apenas este palpite individualmente"
-                          >
-                            <Save className="w-3 h-3" />
-                            {savingGuessId === det.guessId ? 'Salvando...' : 'Salvar Palpite'}
-                          </button>
+                          <div className="text-xl font-black font-mono text-cyan-300 flex items-center gap-1.5">
+                            <span>+{det.pontos} pt{det.pontos !== 1 ? 's' : ''}</span>
+                            {det.pontos > 0 && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+                          </div>
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            Pronto para lançamento
+                          </span>
                         </div>
                       </div>
                     ))}
@@ -1657,31 +1708,34 @@ export default function AdminResults() {
           )}
 
           {/* Bottom Execution Button for Whole Round */}
-          <div className="pt-4 border-t border-cyan-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="pt-5 border-t border-cyan-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#050b28]/60 p-4 rounded-xl">
             <div>
               <button
                 type="button"
                 onClick={handleExecuteAutomaticScoring}
                 disabled={processingAuto || evaluationPreview.length === 0}
-                className="w-full sm:w-auto px-7 py-3.5 bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:from-cyan-400 hover:to-blue-500 active:from-cyan-600 active:to-blue-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-cyan-950/80 disabled:opacity-40 disabled:cursor-not-allowed"
+                className="w-full sm:w-auto px-8 py-4 bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:from-cyan-400 hover:to-blue-500 active:from-cyan-600 active:to-blue-700 text-white rounded-xl text-sm font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xl shadow-cyan-950/80 disabled:opacity-40 disabled:cursor-not-allowed hover:scale-[1.01]"
               >
-                <Zap className="w-4 h-4 fill-white" />
+                <Zap className="w-5 h-5 fill-white" />
                 {processingAuto 
-                  ? 'Atualizando Todos os Placares e Gols no Banco...' 
-                  : 'Lançar e Atualizar Todos os Placares e Gols da Rodada'
+                  ? 'Atualizando Todos os Placares e Lançando no Banco...' 
+                  : '🚀 Lançar Todas as Pontuações da Rodada de Uma Vez'
                 }
               </button>
-              <p className="text-[10px] font-mono text-cyan-300/70 mt-1.5">
-                ★ Grava os placares oficiais, salva os gols individuais de cada capitão, credita os pontos no ranking geral e encerra a rodada.
+              <p className="text-[11px] font-mono text-cyan-300/80 mt-2">
+                ★ Grava os resultados oficiais, salva os palpites, credita as pontuações no ranking de todos os participantes e <strong>abre o mercado automaticamente</strong>!
               </p>
             </div>
 
             <div className="text-right">
               <span className="text-xs font-mono font-bold text-slate-300 block">
-                Total Geral Calculado:
+                Total Geral Calculado da Rodada:
               </span>
-              <span className="text-lg font-black font-mono text-cyan-400">
-                +{totalPontosADistribuir} pontos em {totalParticipantesApurados} participante(s)
+              <span className="text-2xl font-black font-mono text-cyan-400">
+                +{totalPontosADistribuir} pontos
+              </span>
+              <span className="text-[11px] font-mono text-slate-400 block mt-0.5">
+                distribuídos em {totalParticipantesApurados} participante(s)
               </span>
             </div>
           </div>

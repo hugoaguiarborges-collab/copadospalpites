@@ -103,10 +103,13 @@ export default function HistoricoRodadas({ initialRoundId }: HistoricoRodadasPro
     async function loadRoundData() {
       setLoadingRoundData(true);
       try {
-        // Palpites da rodada selecionada
+        const roundIds = [selectedRoundId];
+        if (selectedRoundId === 'round-1') roundIds.push('round-1-quarta');
+        if (selectedRoundId === 'round-1-quarta') roundIds.push('round-1');
+
         const qPalpites = query(
           collection(db, 'palpites'),
-          where('rodada', '==', selectedRoundId),
+          where('rodada', 'in', roundIds),
           orderBy('data_hora_envio', 'asc')
         );
 

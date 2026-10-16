@@ -152,7 +152,7 @@ export async function checkAndEnsureNewTournament(): Promise<boolean> {
 
     const checkPromise = (async () => {
       const configDoc = await getDoc(doc(db, 'sistema', 'config'));
-      if (!configDoc.exists() || configDoc.data()?.campeonato_ativo !== TOURNAMENT_VERSION) {
+      if (!configDoc.exists()) {
         await resetTournamentToNewChampionship();
         return true;
       }

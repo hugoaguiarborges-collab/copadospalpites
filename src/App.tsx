@@ -11,7 +11,7 @@ import LeaderboardPage from './components/LeaderboardPage';
 import AdminPage from './components/AdminPage';
 import HistoricoRodadas from './components/HistoricoRodadas';
 import { checkAndEnsureNewTournament } from './utils/tournamentReset';
-import { getNextTuesday13h, getNextWednesday13h, shouldAutoOpenThursdayMidnight, formatDateTimeDisplay, getRoundNumber, isTuesdayMatchday } from './utils/dateUtils';
+import { getNextTuesday13h, getNextWednesday13h, shouldAutoOpenWednesdayMidnight, formatDateTimeDisplay, getRoundNumber, isTuesdayMatchday } from './utils/dateUtils';
 import { REAL_UCL_FIXTURES } from './constants/uclFixtures';
 import { Check, Trophy, Sparkles, History, Shield } from 'lucide-react';
 
@@ -99,27 +99,25 @@ export default function App() {
           setSchedulerLog(`Mercado da "${r.nome}" encerrado pontualmente (${closingDayName}). Aguardando apuração dos resultados oficiais.`);
         }
 
-        // 2. Reabertura automática na quinta-feira à meia-noite (00:00) quando o ADM não atualizar nada
-        if (shouldAutoOpenThursdayMidnight(rounds, now)) {
-          // Encontrar a primeira rodada que ainda não foi apurada/aberta
+        // 2. Reabertura automática na meia-noite da quarta-feira (00:00) se o ADM não atualizou na terça:
+        // "Se não houver atualização do administrador, à meia-noite da quarta-feira ele já é reaberto e de 13 horas da quarta-feira é fechado novamente."
+        if (shouldAutoOpenWednesdayMidnight(rounds, now)) {
           const roundToOpen = rounds.find(r => !r.is_test && r.id !== 'rodada-teste' && !r.apurada && r.status !== 'aberta');
           
           if (roundToOpen) {
-            const nextTuesday = getNextTuesday13h(now);
-            const rNum = getRoundNumber(roundToOpen.nome || roundToOpen.id);
-            const rDate = (rNum % 2 === 0) ? '21/10' : '20/10';
-            const matches = REAL_UCL_FIXTURES[rDate] || REAL_UCL_FIXTURES['20/10'];
+            const wedDeadline = getNextWednesday13h(now);
+            const matches = REAL_UCL_FIXTURES['21/10'] || REAL_UCL_FIXTURES['20/10'];
 
             await updateDoc(doc(db, 'rodadas', roundToOpen.id), {
               status: 'aberta',
               abertura: nowStr,
-              fechamento: nextTuesday.toISOString(),
-              data_jogos: rDate,
+              fechamento: wedDeadline.toISOString(),
+              data_jogos: '21/10',
               jogos_disponiveis: matches
             });
 
-            console.log(`Scheduler: Mercado aberto automaticamente na quinta-feira à meia-noite para ${roundToOpen.nome}!`);
-            setSchedulerLog(`Mercado da "${roundToOpen.nome}" ABERTO AUTOMATICAMENTE na quinta-feira à meia-noite! Fechamento na próxima terça-feira às 13:00 (${formatDateTimeDisplay(nextTuesday.toISOString())}).`);
+            console.log(`Scheduler: Mercado reaberto automaticamente na meia-noite de quarta para ${roundToOpen.nome}!`);
+            setSchedulerLog(`Mercado da "${roundToOpen.nome}" REABERTO AUTOMATICAMENTE na meia-noite de quarta! Fechamento hoje às 13:00 (${formatDateTimeDisplay(wedDeadline.toISOString())}).`);
           }
         }
       } catch (err) {

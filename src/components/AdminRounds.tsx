@@ -14,7 +14,8 @@ import {
 import { db } from '../firebase';
 import { Rodada } from '../types';
 import { getNextTuesday13h, getNextWednesday13h, getClosingForNextRound, getClosingForRound, formatDateTimeDisplay, getRoundNumber } from '../utils/dateUtils';
-import { Calendar, Plus, Edit, Trash, Check, X, ShieldAlert, Star, Search, Unlock, Lock, FlaskConical, Play, RefreshCw, AlertTriangle, Sparkles, Globe } from 'lucide-react';
+import { Calendar, Plus, Edit, Trash, Check, X, ShieldAlert, Star, Search, Unlock, Lock, FlaskConical, Play, RefreshCw, AlertTriangle, Sparkles, Globe, RotateCcw } from 'lucide-react';
+import { restoreOfficialGuesses } from '../utils/backupGuesses';
 import { fetchUclFixturesWithAI, REAL_UCL_FIXTURES } from '../constants/uclFixtures';
 import { JogoDisponivel } from '../types';
 
@@ -281,6 +282,21 @@ export default function AdminRounds() {
     }
   };
 
+  const handleRestoreOfficialGuesses = async () => {
+    setErrorMsg('');
+    setSuccessMsg('');
+    try {
+      const activeOrFirst = rounds.find(r => r.status === 'aberta') || rounds[0];
+      const targetId = activeOrFirst?.id || 'round-1';
+      const count = await restoreOfficialGuesses(targetId);
+      setSuccessMsg(`✅ ${count} palpites oficiais dos 7 participantes recuperados com sucesso para a ${activeOrFirst?.nome || 'Rodada 1'}!`);
+      loadRounds();
+    } catch (err: any) {
+      console.error(err);
+      setErrorMsg(`Erro ao recuperar palpites: ${err?.message || err}`);
+    }
+  };
+
   // Controles Exclusivos da Rodada de Teste
   const testRound = rounds.find(r => r.is_test || r.id === 'rodada-teste');
 
@@ -392,6 +408,69 @@ export default function AdminRounds() {
           <span>{successMsg}</span>
         </div>
       )}
+
+      {/* CONTROLE RÁPIDO DO MERCADO E RECUPERAÇÃO DE PALPITES */}
+      {(() => {
+        const activeOrFirst = rounds.find(r => r.status === 'aberta') || rounds[0];
+        if (!activeOrFirst) return null;
+        const isMarketOpen = activeOrFirst.status === 'aberta';
+
+        return (
+          <div className="bg-[#050b28] border-2 border-cyan-500/40 rounded-2xl p-4 sm:p-5 shadow-2xl space-y-3 text-white">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-black uppercase tracking-wider text-cyan-300 font-mono">
+                    Controle Direto do Mercado:
+                  </span>
+                  <span className="text-sm font-black text-white">{activeOrFirst.nome}</span>
+                  {isMarketOpen ? (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-950 text-emerald-300 border border-emerald-500/50">
+                      ● Aberto
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-rose-950 text-rose-300 border border-rose-500/50 flex items-center gap-1">
+                      <Lock className="w-3 h-3" /> Fechado
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-slate-300 mt-1">
+                  Abra ou feche o mercado desta rodada imediatamente, ou recupere os palpites oficiais enviados pelos participantes.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {isMarketOpen ? (
+                  <button
+                    type="button"
+                    onClick={() => handleQuickCloseRound(activeOrFirst)}
+                    className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-rose-600 to-red-700 hover:from-rose-500 hover:to-red-600 text-white text-xs font-black uppercase tracking-wider flex items-center gap-1.5 cursor-pointer shadow-md shadow-rose-950/60"
+                  >
+                    <Lock className="w-3.5 h-3.5" /> Fechar Mercado Agora
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleQuickOpenRound(activeOrFirst)}
+                    className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-black uppercase tracking-wider flex items-center gap-1.5 cursor-pointer shadow-md shadow-emerald-950/60"
+                  >
+                    <Unlock className="w-3.5 h-3.5" /> Abrir Mercado Agora
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleRestoreOfficialGuesses}
+                  className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white text-xs font-black uppercase tracking-wider flex items-center gap-1.5 cursor-pointer shadow-md shadow-amber-950/60"
+                  title="Recupera todos os palpites dos 7 participantes salvos no backup"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" /> Recuperar Palpites
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* SEÇÃO IA: BUSCA AUTOMÁTICA DE JOGOS REAIS COM GOOGLE SEARCH */}
       <div className="bg-gradient-to-r from-cyan-950/40 via-[#071138] to-blue-950/40 border-2 border-cyan-500/30 rounded-2xl p-5 shadow-xl space-y-4 text-white">

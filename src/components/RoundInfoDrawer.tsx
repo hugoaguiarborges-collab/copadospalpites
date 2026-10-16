@@ -66,9 +66,13 @@ export default function RoundInfoDrawer({
   useEffect(() => {
     if (!isOpen || !targetRoundId) return;
 
+    const roundIds = [targetRoundId];
+    if (targetRoundId === 'round-1') roundIds.push('round-1-quarta');
+    if (targetRoundId === 'round-1-quarta') roundIds.push('round-1');
+
     // Check if targetRoundId matches current palpites prop
-    const fromProps = palpites.filter(p => p.rodada === targetRoundId);
-    if (fromProps.length > 0 && targetRoundId === activeRound?.id) {
+    const fromProps = palpites.filter(p => roundIds.includes(p.rodada));
+    if (fromProps.length > 0) {
       setRoundGuesses(fromProps);
       return;
     }
@@ -76,7 +80,7 @@ export default function RoundInfoDrawer({
     async function fetchRoundGuesses() {
       setLoadingGuesses(true);
       try {
-        const qG = query(collection(db, 'palpites'), where('rodada', '==', targetRoundId));
+        const qG = query(collection(db, 'palpites'), where('rodada', 'in', roundIds));
         const snap = await getDocs(qG);
         const list: Palpite[] = [];
         snap.forEach(d => list.push({ id: d.id, ...d.data() } as Palpite));
@@ -283,7 +287,7 @@ export default function RoundInfoDrawer({
                   <Lock className="w-10 h-10 text-cyan-400 mx-auto" />
                   <h3 className="text-base font-black text-white">Palpites em Sigilo Absoluto</h3>
                   <p className="text-xs text-slate-300 max-w-sm mx-auto leading-relaxed">
-                    O mercado desta rodada ainda está <strong className="text-cyan-300">ABERTO</strong>. Os palpites de todos os participantes ficam protegidos e só são revelados automaticamente quando o mercado fechar às terças 13:00.
+                    O mercado desta rodada ainda está <strong className="text-cyan-300">ABERTO</strong>. Os palpites de todos os participantes ficam protegidos e só são revelados automaticamente quando o mercado fechar (terças e quartas às 13:00).
                   </p>
                   <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-cyan-950/80 border border-cyan-500/40 rounded-full text-[10px] font-mono text-cyan-200">
                     <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />

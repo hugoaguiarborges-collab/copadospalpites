@@ -30,6 +30,7 @@ import {
   Lock
 } from 'lucide-react';
 import { getRoundNumber, getFriendlyClosingLabel, getNextWednesday13h } from '../utils/dateUtils';
+import { restoreOfficialGuesses } from '../utils/backupGuesses';
 import { UclStarball, UclBadge } from './UclAssets';
 import RoundInfoDrawer from './RoundInfoDrawer';
 
@@ -214,22 +215,38 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
         }
 
         const open = testRoundOpen || standardOpen || null;
-        if (open && !open.is_test && now.getDay() === 3) {
+        // Se o mercado estiver fechado, manter a rodada existente para visualização, sigilo/revelação e contagem
+        const currentRound = open || rList.find(r => r.id === 'round-1') || rList[0] || null;
+
+        if (currentRound && !currentRound.is_test && now.getDay() === 3 && currentRound.status === 'aberta') {
           const wed13h = getNextWednesday13h(now);
-          if (new Date(open.fechamento).getTime() > wed13h.getTime() + 24 * 60 * 60 * 1000) {
-            open.fechamento = wed13h.toISOString();
+          if (new Date(currentRound.fechamento).getTime() > wed13h.getTime() + 24 * 60 * 60 * 1000) {
+            currentRound.fechamento = wed13h.toISOString();
           }
         }
-        setActiveRound(open);
+        setActiveRound(currentRound);
 
         const closed = rList.filter(r => r.status === 'encerrada' || (now >= new Date(r.fechamento) && !r.is_test));
         closed.sort((a, b) => getRoundNumber(b.nome || b.id) - getRoundNumber(a.nome || a.id));
         setClosedRounds(closed);
 
-        if (open) {
-          const gSnap = await getDocs(query(collection(db, 'palpites'), where('rodada', '==', open.id)));
-          const gList: Palpite[] = [];
+        if (currentRound) {
+          const roundIds = [currentRound.id];
+          if (currentRound.id === 'round-1') roundIds.push('round-1-quarta');
+          if (currentRound.id === 'round-1-quarta') roundIds.push('round-1');
+
+          const gSnap = await getDocs(query(collection(db, 'palpites'), where('rodada', 'in', roundIds)));
+          let gList: Palpite[] = [];
           gSnap.forEach(d => gList.push({ id: d.id, ...d.data() } as Palpite));
+
+          // Auto-healing: Se palpites da rodada 1 estiverem vazios no cliente, recuperar automaticamente do backup
+          if (gList.length === 0 && (currentRound.id === 'round-1' || currentRound.id === 'round-1-quarta')) {
+            await restoreOfficialGuesses(currentRound.id);
+            const refetchSnap = await getDocs(query(collection(db, 'palpites'), where('rodada', 'in', roundIds)));
+            gList = [];
+            refetchSnap.forEach(d => gList.push({ id: d.id, ...d.data() } as Palpite));
+          }
+
           setAllRoundGuesses(gList);
         }
       } catch (err) {
@@ -273,9 +290,11 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
     if (activeRound) {
       const pFound = participantes.find(p => p.nome.toLowerCase() === pNome.toLowerCase());
       if (pFound) {
+        const userGuesses = allRoundGuesses.filter(g => g.participante.toLowerCase() === pNome.toLowerCase());
+        const countFromGuesses = userGuesses.length > 0 ? (userGuesses[0].envio_numero || 1) : 0;
         const storageKey = `palpites_count_${pFound.id}_${activeRound.id}`;
         const saved = localStorage.getItem(storageKey);
-        setSubmissionCount(saved ? parseInt(saved, 10) : 0);
+        setSubmissionCount(saved ? parseInt(saved, 10) : countFromGuesses);
       }
     }
   };

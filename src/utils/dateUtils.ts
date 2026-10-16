@@ -127,27 +127,32 @@ export function getClosingForRound(
 }
 
 /**
- * Regra da quinta-feira à meia-noite:
- * "Em casos de rodadas onde o ADM não atualize nada, à meia-noite da quinta-feira
- * você pode abrir o mercado automaticamente, porque isso são casos de rodadas que não têm jogos."
+ * Regra oficial de reabertura automática na quarta-feira:
+ * "Se não houver atualização do administrador, à meia-noite da quarta-feira ele já é reaberto
+ * e de 13 horas da quarta-feira é fechado novamente. E nesse caso ele só abre quando o administrador atualizar todas as pontuações."
  *
- * Retorna true se hoje é quinta-feira (a partir de 00:00), sexta, sábado, domingo, segunda,
- * ou terça antes das 13h, e o mercado estiver sem nenhuma rodada aberta ativa.
+ * Retorna true se hoje for quarta-feira (day === 3) antes das 13h (hour < 13),
+ * e não houver nenhuma rodada aberta no momento (ou seja, o ADM não atualizou na terça).
  */
-export function shouldAutoOpenThursdayMidnight(rounds: Rodada[], now: Date = new Date()): boolean {
+export function shouldAutoOpenWednesdayMidnight(rounds: Rodada[], now: Date = new Date()): boolean {
   const currentDay = now.getDay();
   const currentHour = now.getHours();
 
-  // Se for terça após 13h: fechado aguardando apuração do ADM dos jogos de terça
-  if (currentDay === 2 && currentHour >= 13) return false;
+  // Quarta-feira (3), das 00:00 até 12:59:
+  if (currentDay === 3 && currentHour < 13) {
+    const hasOpenActiveRound = rounds.some(r => r.status === 'aberta' && now < new Date(r.fechamento));
+    return !hasOpenActiveRound;
+  }
 
-  // Se for quarta-feira o dia inteiro: aguardando os jogos de quarta e a apuração do ADM
-  if (currentDay === 3) return false;
+  return false;
+}
 
-  // Quinta (4), Sexta (5), Sábado (6), Domingo (0), Segunda (1), Terça até 12:59 (2):
-  // Se não houver rodada aberta no momento, deve abrir automaticamente até a próxima terça 13h!
-  const hasOpenActiveRound = rounds.some(r => r.status === 'aberta' && now < new Date(r.fechamento));
-  return !hasOpenActiveRound;
+/**
+ * Após quarta-feira às 13:00, o mercado permanece estritamente fechado
+ * e só reabre quando o administrador atualizar todas as pontuações.
+ */
+export function shouldAutoOpenThursdayMidnight(rounds: Rodada[], now: Date = new Date()): boolean {
+  return false;
 }
 
 /**
