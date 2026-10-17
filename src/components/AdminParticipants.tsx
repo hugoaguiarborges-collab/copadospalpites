@@ -194,12 +194,14 @@ export default function AdminParticipants() {
                       className="bg-white border border-neutral-250 rounded-md px-2 py-1 text-xs w-full text-neutral-800"
                     />
                     <button 
+                      type="button"
                       onClick={() => handleSaveEdit(p)}
                       className="p-1 rounded bg-neutral-100 text-emerald-600 hover:bg-emerald-50 transition-colors cursor-pointer"
                     >
                       <Check className="w-4 h-4" />
                     </button>
                     <button 
+                      type="button"
                       onClick={handleCancelEdit}
                       className="p-1 rounded bg-neutral-100 text-neutral-500 hover:bg-neutral-50 transition-colors cursor-pointer"
                     >
@@ -215,6 +217,7 @@ export default function AdminParticipants() {
 
                 <div className="flex items-center gap-1.5">
                   <button
+                    type="button"
                     onClick={() => handleStartEdit(p)}
                     className="p-1.5 text-neutral-500 hover:bg-neutral-100 rounded-md transition-colors cursor-pointer"
                     title="Editar nome"
@@ -222,6 +225,7 @@ export default function AdminParticipants() {
                     <Edit className="w-4 h-4" />
                   </button>
                   <button
+                    type="button"
                     onClick={() => handleDeleteParticipant(p.id, p.nome)}
                     className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
                     title="Excluir participante"

@@ -12,8 +12,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Participante, PontuacaoLog } from '../types';
-import { resetTournamentToNewChampionship } from '../utils/tournamentReset';
-import { ChevronUp, ChevronDown, RefreshCw, Star, ShieldAlert, History, AlertTriangle } from 'lucide-react';
+import { ChevronUp, ChevronDown, RefreshCw, Star, ShieldAlert, History } from 'lucide-react';
 import { UclStarball, UclBadge, UclTrophy } from './UclAssets';
 
 export default function AdminScores() {
@@ -30,7 +29,6 @@ export default function AdminScores() {
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [resettingTournament, setResettingTournament] = useState(false);
 
   // Read list of participants
   const loadParticipants = async () => {
@@ -123,27 +121,6 @@ export default function AdminScores() {
     }
   };
 
-  const handleResetAllScores = async () => {
-    const confirmed = window.confirm(
-      '⚠️ ATENÇÃO: Deseja realmente zerar todas as pontuações e iniciar um novo campeonato oficial a partir de hoje?\n\n- Todas as pontuações de todos os participantes serão zeradas (0 pts).\n- Serão configuradas as 50 rodadas oficiais com fechamento às terças-feiras às 13:00.\n- O mercado abre automaticamente quando a atualização de resultados for feita.\n- Os palpites e logs anteriores serão limpos.'
-    );
-    if (!confirmed) return;
-
-    setResettingTournament(true);
-    setErrorMsg('');
-    setSuccessMsg('');
-    try {
-      await resetTournamentToNewChampionship();
-      await loadParticipants();
-      setSuccessMsg('Todas as pontuações foram zeradas com sucesso e o Novo Campeonato foi iniciado!');
-    } catch (err: any) {
-      console.error("Error resetting tournament:", err);
-      setErrorMsg(`Erro ao zerar pontuações: ${err?.message || err}`);
-    } finally {
-      setResettingTournament(false);
-    }
-  };
-
   const formatDateTime = (isoString: string) => {
     if (!isoString) return '';
     try {
@@ -167,20 +144,9 @@ export default function AdminScores() {
             Gerenciar Pontuação da Copa
           </h3>
           <p className="text-xs text-slate-300 font-medium mt-0.5">
-            Ajustes manuais de pontuação dos participantes ou reinicialização de campeonato oficial
+            Ajustes manuais de pontuação dos participantes e consulta de histórico de pontos
           </p>
         </div>
-
-        {/* Reset Championship Button */}
-        <button
-          type="button"
-          onClick={handleResetAllScores}
-          disabled={resettingTournament}
-          className="self-start sm:self-auto px-4 py-2.5 bg-rose-950/80 hover:bg-rose-900 border border-rose-500/40 text-rose-300 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer shadow-md shadow-rose-950/50"
-        >
-          <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
-          {resettingTournament ? 'Zerando Pontuações...' : 'Zerar Pontuações & Novo Campeonato'}
-        </button>
       </div>
 
       {errorMsg && (

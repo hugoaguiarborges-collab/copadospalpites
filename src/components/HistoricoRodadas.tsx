@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Rodada, Palpite, Participante, JogoResultadoOficial } from '../types';
-import { getRoundNumber, formatDateTimeDisplay } from '../utils/dateUtils';
+import { getRoundNumber, formatDateTimeDisplay, sortRoundsChronologically } from '../utils/dateUtils';
 import { 
   evaluateParticipantRound, 
   ParticipantRoundBreakdown,
@@ -60,8 +60,8 @@ export default function HistoricoRodadas({ initialRoundId }: HistoricoRodadasPro
         rSnap.forEach(d => {
           rList.push({ id: d.id, ...d.data() } as Rodada);
         });
-        rList.sort((a, b) => getRoundNumber(a.nome || a.id) - getRoundNumber(b.nome || b.id));
-        setRounds(rList);
+        const sortedRounds = sortRoundsChronologically(rList);
+        setRounds(sortedRounds);
 
         const pList: Participante[] = [];
         pSnap.forEach(d => {
@@ -75,7 +75,7 @@ export default function HistoricoRodadas({ initialRoundId }: HistoricoRodadasPro
           const nowISO = new Date().toISOString();
           const closedRounds = rList.filter(r => r.status === 'encerrada' || r.fechamento <= nowISO);
           if (closedRounds.length > 0) {
-            closedRounds.sort((a, b) => getRoundNumber(b.nome || b.id) - getRoundNumber(a.nome || a.id));
+            closedRounds.sort((a, b) => new Date(b.fechamento).getTime() - new Date(a.fechamento).getTime());
             setSelectedRoundId(closedRounds[0].id);
           } else if (rList.length > 0) {
             setSelectedRoundId(rList[0].id);
@@ -95,6 +95,7 @@ export default function HistoricoRodadas({ initialRoundId }: HistoricoRodadasPro
   useEffect(() => {
     if (!selectedRoundId) return;
 
+    let isMounted = true;
     async function loadRoundData() {
       setLoadingRoundData(true);
       try {
@@ -104,9 +105,7 @@ export default function HistoricoRodadas({ initialRoundId }: HistoricoRodadasPro
             [
               selectedRoundId,
               curRound?.nome,
-              curRound?.id,
-              selectedRoundId === 'round-1' ? 'round-1-quarta' : null,
-              selectedRoundId === 'round-1-quarta' ? 'round-1' : null
+              curRound?.id
             ].filter(Boolean)
           )
         ) as string[];
@@ -126,6 +125,8 @@ export default function HistoricoRodadas({ initialRoundId }: HistoricoRodadasPro
           getDocs(qPalpites),
           getDocs(qOficiais)
         ]);
+
+        if (!isMounted) return;
 
         const pList: Palpite[] = [];
         pSnap.forEach(d => {
@@ -153,12 +154,17 @@ export default function HistoricoRodadas({ initialRoundId }: HistoricoRodadasPro
       } catch (err) {
         console.error("Erro ao carregar rodada selecionada:", err);
       } finally {
-        setLoadingRoundData(false);
+        if (isMounted) {
+          setLoadingRoundData(false);
+        }
       }
     }
 
     loadRoundData();
-  }, [selectedRoundId, rounds]);
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedRoundId]);
 
   const currentRound = useMemo(() => {
     return rounds.find(r => r.id === selectedRoundId);

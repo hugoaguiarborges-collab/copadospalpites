@@ -29,7 +29,7 @@ import {
   ListFilter,
   Lock
 } from 'lucide-react';
-import { getRoundNumber, getFriendlyClosingLabel, getNextWednesday13h } from '../utils/dateUtils';
+import { getRoundNumber, getFriendlyClosingLabel, sortRoundsChronologically } from '../utils/dateUtils';
 import { UclStarball, UclBadge } from './UclAssets';
 import RoundInfoDrawer from './RoundInfoDrawer';
 
@@ -201,40 +201,20 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
 
         const rList: Rodada[] = [];
         rSnap.forEach(d => rList.push({ id: d.id, ...d.data() } as Rodada));
-        rList.sort((a, b) => getRoundNumber(a.nome || a.id) - getRoundNumber(b.nome || b.id));
-        setRounds(rList);
+        const sortedList = sortRoundsChronologically(rList);
+        setRounds(sortedList);
 
         const now = new Date();
-        const testRoundOpen = rList.find(r => (r.is_test || r.id === 'rodada-teste') && r.status === 'aberta');
-        let standardOpen = rList.find(r => r.status === 'aberta' && now < new Date(r.fechamento));
-        
-        // Se hoje for quarta-feira e houver rodada aberta de quarta-feira:
-        if (!standardOpen && now.getDay() === 3) {
-          standardOpen = rList.find(r => r.status === 'aberta' && !r.is_test);
-        }
-
-        const open = testRoundOpen || standardOpen || null;
-        // Se o mercado estiver fechado, manter a rodada existente para visualização, sigilo/revelação e contagem
-        const currentRound = open || rList.find(r => r.id === 'round-1') || rList[0] || null;
-
-        if (currentRound && !currentRound.is_test && now.getDay() === 3 && currentRound.status === 'aberta') {
-          const wed13h = getNextWednesday13h(now);
-          if (new Date(currentRound.fechamento).getTime() > wed13h.getTime() + 24 * 60 * 60 * 1000) {
-            currentRound.fechamento = wed13h.toISOString();
-          }
-        }
+        const open = sortedList.find(r => r.status === 'aberta' && now < new Date(r.fechamento)) || sortedList.find(r => r.status === 'aberta') || null;
+        const currentRound = open || sortedList[0] || null;
         setActiveRound(currentRound);
 
-        const closed = rList.filter(r => r.status === 'encerrada' || (now >= new Date(r.fechamento) && !r.is_test));
-        closed.sort((a, b) => getRoundNumber(b.nome || b.id) - getRoundNumber(a.nome || a.id));
+        const closed = sortedList.filter(r => r.status === 'encerrada' || now >= new Date(r.fechamento));
+        closed.sort((a, b) => new Date(b.fechamento).getTime() - new Date(a.fechamento).getTime());
         setClosedRounds(closed);
 
         if (currentRound) {
-          const roundIds = [currentRound.id];
-          if (currentRound.id === 'round-1') roundIds.push('round-1-quarta');
-          if (currentRound.id === 'round-1-quarta') roundIds.push('round-1');
-
-          const gSnap = await getDocs(query(collection(db, 'palpites'), where('rodada', 'in', roundIds)));
+          const gSnap = await getDocs(query(collection(db, 'palpites'), where('rodada', '==', currentRound.id)));
           const gList: Palpite[] = [];
           gSnap.forEach(d => gList.push({ id: d.id, ...d.data() } as Palpite));
           setAllRoundGuesses(gList);

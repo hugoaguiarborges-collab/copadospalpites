@@ -161,9 +161,7 @@ async function startServer() {
       configFile: path.resolve(__dirname, 'vite.config.ts'),
       server: {
         middlewareMode: true,
-        hmr: {
-          server: httpServer
-        },
+        hmr: false,
         watch: null,
       },
       appType: 'spa'

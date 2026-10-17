@@ -244,6 +244,7 @@ export default function AdminPage() {
         </div>
 
         <button
+          type="button"
           onClick={handleSignOut}
           className="self-start inline-flex items-center gap-1.5 px-3 py-1.5 border border-cyan-500/30 bg-[#050b28] text-slate-300 hover:text-white hover:border-cyan-400 rounded-lg text-xs font-bold cursor-pointer transition-all uppercase tracking-wider font-mono shadow-xs"
         >
@@ -254,6 +255,7 @@ export default function AdminPage() {
       {/* Tabs navigation row - UEFA Segmented Controls */}
       <div className="flex overflow-x-auto gap-1 bg-[#050b28] p-1.5 rounded-xl border border-cyan-500/25 shadow-lg shadow-cyan-950/40">
         <button
+          type="button"
           onClick={() => setActiveTab('participants')}
           className={`px-4 py-2 text-xs font-bold uppercase transition-all whitespace-nowrap cursor-pointer rounded-lg font-mono flex items-center gap-1.5 ${
             activeTab === 'participants'
@@ -264,6 +266,7 @@ export default function AdminPage() {
           <Users className="w-3.5 h-3.5 text-cyan-400" /> Participantes
         </button>
         <button
+          type="button"
           onClick={() => setActiveTab('results')}
           className={`px-4 py-2 text-xs font-bold uppercase transition-all whitespace-nowrap cursor-pointer rounded-lg font-mono flex items-center gap-1.5 ${
             activeTab === 'results'
@@ -274,6 +277,7 @@ export default function AdminPage() {
           <CheckSquare className="w-3.5 h-3.5 text-cyan-400" /> Avaliar Palpites
         </button>
         <button
+          type="button"
           onClick={() => setActiveTab('scores')}
           className={`px-4 py-2 text-xs font-bold uppercase transition-all whitespace-nowrap cursor-pointer rounded-lg font-mono flex items-center gap-1.5 ${
             activeTab === 'scores'
@@ -284,6 +288,7 @@ export default function AdminPage() {
           <Coins className="w-3.5 h-3.5 text-cyan-400" /> Ajustar Pontuações
         </button>
         <button
+          type="button"
           onClick={() => setActiveTab('rounds')}
           className={`px-4 py-2 text-xs font-bold uppercase transition-all whitespace-nowrap cursor-pointer rounded-lg font-mono flex items-center gap-1.5 ${
             activeTab === 'rounds'

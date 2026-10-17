@@ -60,44 +60,76 @@ export function getNextWednesday13h(fromDate: Date = new Date()): Date {
 export function isTuesdayMatchday(round: Rodada | null | undefined): boolean {
   if (!round) return true;
   const str = `${round.id || ''} ${round.nome || ''} ${round.data_jogos || ''}`.toLowerCase();
-  if (str.includes('quarta') || str.includes('21/10') || str.includes('qua')) {
+  if (str.includes('quarta') || str.includes('21/10') || str.includes('04/11') || str.includes('25/11') || str.includes('09/12') || str.includes('20/01') || str.includes('27/01') || str.includes('qua')) {
     return false;
   }
   return true;
 }
 
 /**
- * Regra oficial do ciclo de mercado da Champions League:
- * Em uma mesma rodada (ex: Rodada 1):
- * 1. O mercado fecha na terça-feira às 13h (jogos de terça da rodada).
- * 2. Quando o ADM atualiza os jogos de terça, o mercado reabre automaticamente para os jogos de
- *    quarta-feira da MESMA rodada, fechando na quarta-feira às 13h!
- * 3. O mercado fecha na quarta-feira às 13h (jogos de quarta da rodada).
- * 4. Quando o ADM atualiza os jogos de quarta, o mercado reabre automaticamente para a
- *    PRÓXIMA rodada (ex: Rodada 2), fechando na próxima terça-feira às 13h!
+ * Ordena as rodadas estritamente pela cronologia oficial de fechamento.
+ */
+export function sortRoundsChronologically(rounds: Rodada[]): Rodada[] {
+  return [...rounds].sort((a, b) => {
+    const timeA = a.fechamento ? new Date(a.fechamento).getTime() : 0;
+    const timeB = b.fechamento ? new Date(b.fechamento).getTime() : 0;
+    if (timeA !== timeB) return timeA - timeB;
+    return getRoundNumber(a.nome || a.id) - getRoundNumber(b.nome || b.id);
+  });
+}
+
+/**
+ * Localiza a próxima rodada na sequência oficial do calendário.
+ */
+export function getNextRoundInCalendar(currentRound: Rodada | null | undefined, allRounds: Rodada[]): Rodada | undefined {
+  if (!currentRound) return undefined;
+  const sorted = sortRoundsChronologically(allRounds).filter(r => !r.is_test && r.id !== 'rodada-teste');
+  const currentIndex = sorted.findIndex(r => r.id === currentRound.id);
+  if (currentIndex !== -1 && currentIndex + 1 < sorted.length) {
+    return sorted[currentIndex + 1];
+  }
+  return undefined;
+}
+
+/**
+ * Regra oficial do ciclo de mercado do bolão:
+ * O mercado fecha às 13h das terças e abre assim que os palpites forem atualizados pelo ADM.
+ * Fechando novamente no dia seguinte (quarta-feira) às 13h e abrindo novamente quando as pontuações forem atualizadas.
  */
 export function getClosingForNextRound(
   roundEvaluated: Rodada | null | undefined,
-  now: Date = new Date()
+  now: Date = new Date(),
+  allRounds?: Rodada[]
 ): { fechamento: Date; targetDateLabel: string; targetDayName: string; isNextDayWednesday: boolean } {
+  // Se allRounds foi fornecido, pega a data oficial da próxima rodada do calendário
+  if (roundEvaluated && allRounds && allRounds.length > 0) {
+    const nextR = getNextRoundInCalendar(roundEvaluated, allRounds);
+    if (nextR && nextR.fechamento) {
+      const nextDate = new Date(nextR.fechamento);
+      const isTue = isTuesdayMatchday(nextR);
+      return {
+        fechamento: nextDate,
+        targetDateLabel: nextR.data_jogos || (isTue ? 'terça-feira' : 'quarta-feira'),
+        targetDayName: isTue ? 'terça-feira às 13:00' : 'quarta-feira às 13:00',
+        isNextDayWednesday: !isTue
+      };
+    }
+  }
+
   const wasTuesday = isTuesdayMatchday(roundEvaluated);
 
   if (wasTuesday) {
-    // A rodada avaliada foi de terça: a próxima etapa é QUARTA da MESMA rodada!
-    // Fecha na quarta-feira às 13h!
     return {
       fechamento: getNextWednesday13h(now),
-      targetDateLabel: '21/10',
+      targetDateLabel: 'quarta-feira',
       targetDayName: 'quarta-feira às 13:00',
       isNextDayWednesday: true
     };
   }
 
-  // A rodada avaliada foi de quarta: a rodada semanal foi concluída!
-  // A próxima é a PRÓXIMA RODADA (jogos de terça da semana que vem), fechando na terça às 13h!
   return {
     fechamento: getNextTuesday13h(now),
-    targetDateLabel: '20/10',
+    targetDateLabel: 'terça-feira',
     targetDayName: 'terça-feira às 13:00',
     isNextDayWednesday: false
   };
@@ -105,13 +137,23 @@ export function getClosingForNextRound(
 
 /**
  * Retorna a data e descrição de fechamento para a PRÓPRIA rodada que está sendo aberta.
- * - Se a rodada é de terça-feira: fecha na terça-feira às 13:00.
- * - Se a rodada é de quarta-feira: fecha na quarta-feira às 13:00.
  */
 export function getClosingForRound(
   round: Rodada | null | undefined,
   now: Date = new Date()
 ): { fechamento: Date; targetDayName: string } {
+  if (round?.fechamento) {
+    const d = new Date(round.fechamento);
+    // Se a data de fechamento cadastrada for futura, preserva a data exata oficial da rodada!
+    if (d.getTime() > now.getTime()) {
+      const isTue = isTuesdayMatchday(round);
+      return {
+        fechamento: d,
+        targetDayName: isTue ? 'terça-feira às 13:00' : 'quarta-feira às 13:00'
+      };
+    }
+  }
+
   const isTue = isTuesdayMatchday(round);
   if (isTue) {
     return {
@@ -129,10 +171,7 @@ export function getClosingForRound(
 /**
  * Regra oficial de reabertura automática na quarta-feira:
  * "Se não houver atualização do administrador, à meia-noite da quarta-feira ele já é reaberto
- * e de 13 horas da quarta-feira é fechado novamente. E nesse caso ele só abre quando o administrador atualizar todas as pontuações."
- *
- * Retorna true se hoje for quarta-feira (day === 3) antes das 13h (hour < 13),
- * e não houver nenhuma rodada aberta no momento (ou seja, o ADM não atualizou na terça).
+ * e de 13 horas da quarta-feira é fechado novamente."
  */
 export function shouldAutoOpenWednesdayMidnight(rounds: Rodada[], now: Date = new Date()): boolean {
   const currentDay = now.getDay();
@@ -147,10 +186,6 @@ export function shouldAutoOpenWednesdayMidnight(rounds: Rodada[], now: Date = ne
   return false;
 }
 
-/**
- * Após quarta-feira às 13:00, o mercado permanece estritamente fechado
- * e só reabre quando o administrador atualizar todas as pontuações.
- */
 export function shouldAutoOpenThursdayMidnight(rounds: Rodada[], now: Date = new Date()): boolean {
   return false;
 }
@@ -175,7 +210,7 @@ export function formatDateTimeDisplay(isoString: string): string {
 }
 
 /**
- * Retorna uma descrição amigável do fechamento (ex: "Hoje (quarta-feira) às 13:00", "Amanhã às 13:00", etc.)
+ * Retorna uma descrição amigável do fechamento (ex: "Hoje (quarta-feira) às 13:00", etc.)
  */
 export function getFriendlyClosingLabel(fechamentoISO: string, now: Date = new Date()): string {
   if (!fechamentoISO) return '';

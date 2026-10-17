@@ -15,9 +15,9 @@ import {
 import { db } from '../firebase';
 import { Rodada, Palpite, Participante, JogoResultadoOficial, JogoDisponivel } from '../types';
 import { TEAMS_LIST } from '../constants/teams';
-import { REAL_UCL_FIXTURES, getFixturesForRoundDate, findKnownFixtureForTeam } from '../constants/uclFixtures';
+import { REAL_UCL_FIXTURES, ALL_KNOWN_MATCHES, getFixturesForRoundDate, findKnownFixtureForTeam } from '../constants/uclFixtures';
 import { evaluateGuessAgainstResult, parseGuess, normalizeTeamName, areTeamsMatching } from '../utils/scoreCalculator';
-import { getNextTuesday13h, getNextWednesday13h, getClosingForNextRound, getClosingForRound, formatDateTimeDisplay, getRoundNumber, isTuesdayMatchday, getFriendlyClosingLabel } from '../utils/dateUtils';
+import { getNextTuesday13h, getNextWednesday13h, getClosingForNextRound, getClosingForRound, formatDateTimeDisplay, getRoundNumber, isTuesdayMatchday, getFriendlyClosingLabel, sortRoundsChronologically, getNextRoundInCalendar } from '../utils/dateUtils';
 import { deleteRoundCascade } from '../utils/deleteRoundCascade';
 import TabelaParticipacao from './TabelaParticipacao';
 import { 
@@ -105,9 +105,9 @@ export default function AdminResults() {
         rList.push({ id: docObj.id, ...docObj.data() } as Rodada);
       });
       
-      // Sort rounds by round number
-      rList.sort((a,b) => getRoundNumber(a.nome || a.id) - getRoundNumber(b.nome || b.id));
-      setRounds(rList);
+      // Sort rounds chronologically
+      const sortedRounds = sortRoundsChronologically(rList);
+      setRounds(sortedRounds);
       
       if (rList.length > 0 && !selectedRoundId) {
         // Select round awaiting evaluation (e.g. closed round not yet apurada), or open round, or first round
@@ -146,10 +146,7 @@ export default function AdminResults() {
     // 2. All UCL verified calendars across all matchdays
     const allKnownFixtures: JogoDisponivel[] = [
       ...roundFixtures,
-      ...(REAL_UCL_FIXTURES['21/10'] || []),
-      ...(REAL_UCL_FIXTURES['20/10'] || []),
-      ...(REAL_UCL_FIXTURES['22/10'] || []),
-      ...(REAL_UCL_FIXTURES['23/10'] || [])
+      ...ALL_KNOWN_MATCHES
     ];
 
     // For every guess, find its match
@@ -741,32 +738,12 @@ export default function AdminResults() {
         });
         nextRoundMsg = ` Placares atualizados e o mercado da Rodada de Teste foi REABERTO AUTOMATICAMENTE para novos testes!`;
       } else {
-        const currentRoundNum = getRoundNumber(roundName || selectedRoundId);
-        const wasTuesday = isTuesdayMatchday(targetRound);
+        const sortedRounds = sortRoundsChronologically(rounds);
+        let nextRound: Rodada | undefined = getNextRoundInCalendar(targetRound, sortedRounds);
 
-        let nextRound: Rodada | undefined;
-
-        if (wasTuesday) {
-          // Terça apurada: a próxima etapa é a QUARTA da MESMA rodada!
-          nextRound = rounds.find(r => 
-            !r.is_test && 
-            r.id !== 'rodada-teste' && 
-            getRoundNumber(r.nome || r.id) === currentRoundNum &&
-            !isTuesdayMatchday(r)
-          );
-        } else {
-          // Quarta apurada: a próxima etapa é a TERÇA da PRÓXIMA rodada (currentRoundNum + 1)!
-          nextRound = rounds.find(r => 
-            !r.is_test && 
-            r.id !== 'rodada-teste' && 
-            getRoundNumber(r.nome || r.id) === currentRoundNum + 1 &&
-            isTuesdayMatchday(r)
-          );
-        }
-
-        // Fallback: se não encontrar por separação explícita de dia, busca próxima rodada disponível
+        // Fallback: se getNextRoundInCalendar não encontrar pelo índice, busca próxima não apurada e não aberta
         if (!nextRound) {
-          nextRound = rounds.find(r => 
+          nextRound = sortedRounds.find(r => 
             !r.is_test && 
             r.id !== 'rodada-teste' && 
             r.id !== selectedRoundId && 
@@ -776,8 +753,16 @@ export default function AdminResults() {
         }
 
         if (nextRound) {
-          const { fechamento: nextClosing, targetDateLabel: nextDate, targetDayName } = getClosingForNextRound(targetRound, new Date());
-          const nextMatches = REAL_UCL_FIXTURES[nextDate] || REAL_UCL_FIXTURES['21/10'];
+          // Mantém a data de fechamento oficial cadastrada na rodada (às 13h)
+          const nextClosing = nextRound.fechamento 
+            ? new Date(nextRound.fechamento)
+            : getClosingForNextRound(targetRound, new Date(), rounds).fechamento;
+          const isNextTue = isTuesdayMatchday(nextRound);
+          const targetDayName = isNextTue ? 'terça-feira às 13:00' : 'quarta-feira às 13:00';
+          const nextDate = nextRound.data_jogos || (isNextTue ? 'terça-feira' : 'quarta-feira');
+          const nextMatches = (nextRound.jogos_disponiveis && nextRound.jogos_disponiveis.length > 0)
+            ? nextRound.jogos_disponiveis
+            : (getFixturesForRoundDate(nextRound.data_jogos || nextRound.nome));
 
           await updateDoc(doc(db, 'rodadas', nextRound.id), {
             status: 'aberta',
@@ -805,8 +790,7 @@ export default function AdminResults() {
       rSnapUpdated.forEach(docObj => {
         rListUpdated.push({ id: docObj.id, ...docObj.data() } as Rodada);
       });
-      rListUpdated.sort((a,b) => getRoundNumber(a.nome || a.id) - getRoundNumber(b.nome || b.id));
-      setRounds(rListUpdated);
+      setRounds(sortRoundsChronologically(rListUpdated));
 
       await loadGuessesForSelectedRound();
 
@@ -842,8 +826,7 @@ export default function AdminResults() {
       rSnapUpdated.forEach(docObj => {
         rListUpdated.push({ id: docObj.id, ...docObj.data() } as Rodada);
       });
-      rListUpdated.sort((a,b) => getRoundNumber(a.nome || a.id) - getRoundNumber(b.nome || b.id));
-      setRounds(rListUpdated);
+      setRounds(sortRoundsChronologically(rListUpdated));
     } catch (err: any) {
       setErrorMsg(`Erro ao abrir mercado: ${err?.message || err}`);
     }
@@ -861,8 +844,7 @@ export default function AdminResults() {
       rSnapUpdated.forEach(docObj => {
         rListUpdated.push({ id: docObj.id, ...docObj.data() } as Rodada);
       });
-      rListUpdated.sort((a,b) => getRoundNumber(a.nome || a.id) - getRoundNumber(b.nome || b.id));
-      setRounds(rListUpdated);
+      setRounds(sortRoundsChronologically(rListUpdated));
     } catch (err: any) {
       setErrorMsg(`Erro ao fechar mercado: ${err?.message || err}`);
     }
@@ -1047,6 +1029,7 @@ export default function AdminResults() {
       {/* Tabs: Apuração Automática vs Tabela de Participação */}
       <div className="flex flex-wrap items-center gap-2 border-b border-cyan-500/20 pb-2">
         <button
+          type="button"
           onClick={() => setActiveAdminTab('apuracao')}
           className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2 ${
             activeAdminTab === 'apuracao'
@@ -1057,6 +1040,7 @@ export default function AdminResults() {
           <Zap className="w-4 h-4 text-cyan-200" /> 1. Placares dos Jogos & Gols dos Capitães
         </button>
         <button
+          type="button"
           onClick={() => setActiveAdminTab('participacao')}
           className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2 ${
             activeAdminTab === 'participacao'

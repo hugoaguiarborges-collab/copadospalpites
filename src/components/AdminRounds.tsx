@@ -13,7 +13,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Rodada } from '../types';
-import { getNextTuesday13h, getNextWednesday13h, getClosingForNextRound, getClosingForRound, formatDateTimeDisplay, getRoundNumber } from '../utils/dateUtils';
+import { getNextTuesday13h, getNextWednesday13h, getClosingForNextRound, getClosingForRound, formatDateTimeDisplay, getRoundNumber, sortRoundsChronologically } from '../utils/dateUtils';
 import { Calendar, Plus, Edit, Trash, Check, X, ShieldAlert, Star, Search, Unlock, Lock, FlaskConical, Play, RefreshCw, AlertTriangle, Sparkles, Globe, RotateCcw } from 'lucide-react';
 import { restoreOfficialGuesses } from '../utils/backupGuesses';
 import { fetchUclFixturesWithAI, REAL_UCL_FIXTURES } from '../constants/uclFixtures';
@@ -104,8 +104,8 @@ export default function AdminRounds() {
         list.push({ id: doc.id, ...doc.data() } as Rodada);
       });
       // Sort: by round sequence number
-      list.sort((a,b) => getRoundNumber(a.nome || a.id) - getRoundNumber(b.nome || b.id));
-      setRounds(list);
+      const sortedList = sortRoundsChronologically(list);
+      setRounds(sortedList);
     } catch (err) {
       console.error(err);
     } finally {
@@ -310,62 +310,6 @@ export default function AdminRounds() {
     }
   };
 
-  // Controles Exclusivos da Rodada de Teste
-  const testRound = rounds.find(r => r.is_test || r.id === 'rodada-teste');
-
-  const handleActivateTestRound = async () => {
-    setErrorMsg('');
-    setSuccessMsg('');
-    try {
-      const now = new Date();
-      // Fechamento da rodada de teste: 30 dias à frente (controlado manualmente pelo admin)
-      const testClose = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-      
-      await setDoc(doc(db, 'rodadas', 'rodada-teste'), {
-        nome: 'Rodada de Teste',
-        abertura: now.toISOString(),
-        fechamento: testClose.toISOString(),
-        status: 'aberta',
-        is_test: true
-      });
-
-      setSuccessMsg('🧪 Rodada de Teste ATIVADA e com mercado ABERTO! Você pode abrir e fechar o mercado livremente.');
-      loadRounds();
-    } catch (err) {
-      console.error(err);
-      setErrorMsg('Erro ao ativar rodada de teste.');
-    }
-  };
-
-  const handleToggleTestMarket = async (newStatus: 'aberta' | 'encerrada') => {
-    if (!testRound) return;
-    setErrorMsg('');
-    setSuccessMsg('');
-    try {
-      const now = new Date();
-      const testClose = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-
-      await updateDoc(doc(db, 'rodadas', testRound.id), {
-        status: newStatus,
-        abertura: now.toISOString(),
-        fechamento: newStatus === 'aberta' ? testClose.toISOString() : now.toISOString()
-      });
-
-      setSuccessMsg(newStatus === 'aberta' 
-        ? '🧪 Mercado da Rodada de Teste ABERTO! Os palpites já podem ser enviados.' 
-        : '🧪 Mercado da Rodada de Teste FECHADO com sucesso!'
-      );
-      loadRounds();
-    } catch (err) {
-      console.error(err);
-      setErrorMsg('Erro ao alterar mercado da rodada de teste.');
-    }
-  };
-
-  const handleDeleteTestRound = () => {
-    if (!testRound) return;
-    setRoundToDelete({ id: testRound.id, name: testRound.nome });
-  };
 
   return (
     <div className="space-y-8">
@@ -556,108 +500,6 @@ export default function AdminRounds() {
         )}
       </div>
 
-      {/* SEÇÃO EXCLUSIVA: RODADA DE TESTE */}
-      <div className="bg-gradient-to-r from-purple-50 via-white to-purple-50/50 border-2 border-purple-200 rounded-2xl p-6 shadow-xs space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-purple-100 pb-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-purple-100 text-purple-700 rounded-xl">
-              <FlaskConical className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h4 className="text-sm font-black uppercase text-purple-900 tracking-wide">
-                  Controle Exclusivo da Rodada de Teste
-                </h4>
-                {testRound ? (
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                    testRound.status === 'aberta' 
-                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' 
-                      : 'bg-neutral-100 text-neutral-600 border border-neutral-300'
-                  }`}>
-                    {testRound.status === 'aberta' ? '● Mercado de Teste Aberto' : '○ Mercado de Teste Fechado'}
-                  </span>
-                ) : (
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-neutral-100 text-neutral-500">
-                    Não Ativada
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-purple-700/80 mt-0.5 font-medium">
-                Abra e feche o mercado livremente para testes. Ao apagar esta rodada de teste, o campeonato oficial começa com sigilo absoluto.
-              </p>
-            </div>
-          </div>
-
-          {!testRound ? (
-            <button
-              type="button"
-              onClick={handleActivateTestRound}
-              className="px-4 py-2 bg-purple-700 hover:bg-purple-800 text-white rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 cursor-pointer shadow-xs transition-colors shrink-0"
-            >
-              <Play className="w-4 h-4" /> Ativar Rodada de Teste
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={handleDeleteTestRound}
-              className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 cursor-pointer shadow-xs transition-colors shrink-0"
-              title="Apagar rodada de teste e iniciar campeonato oficial"
-            >
-              <Trash className="w-4 h-4" /> Apagar Rodada de Teste
-            </button>
-          )}
-        </div>
-
-        {testRound ? (
-          <div className="bg-white/80 rounded-xl border border-purple-100 p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="space-y-1 text-xs text-neutral-600">
-              <p className="font-bold text-neutral-800">
-                Nome: <span className="font-mono text-purple-900 font-black">{testRound.nome}</span> (ID: <span className="font-mono text-neutral-500">{testRound.id}</span>)
-              </p>
-              <p>
-                Status atual: <strong className={testRound.status === 'aberta' ? 'text-emerald-700' : 'text-neutral-500'}>
-                  {testRound.status === 'aberta' ? 'ABERTA (Permite palpites na caixinha)' : 'FECHADA (Mercado travado)'}
-                </strong>
-              </p>
-            </div>
-
-            <div className="flex items-center gap-2 shrink-0">
-              {testRound.status === 'encerrada' ? (
-                <button
-                  type="button"
-                  onClick={() => handleToggleTestMarket('aberta')}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 cursor-pointer transition-colors shadow-xs"
-                >
-                  <Unlock className="w-4 h-4" /> Abrir Mercado de Teste
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => handleToggleTestMarket('encerrada')}
-                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 cursor-pointer transition-colors shadow-xs"
-                >
-                  <Lock className="w-4 h-4" /> Fechar Mercado de Teste
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={handleDeleteTestRound}
-                className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-colors"
-              >
-                <Trash className="w-3.5 h-3.5" /> Excluir Teste
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="text-xs text-neutral-500 bg-white/60 p-3 rounded-lg border border-purple-100 flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-purple-500 shrink-0" />
-            <span>
-              A rodada de teste não está ativa no momento. Clique no botão <strong>Ativar Rodada de Teste</strong> acima para criá-la e testar a abertura/fechamento do mercado.
-            </span>
-          </div>
-        )}
-      </div>
 
       {/* Create Round form */}
       <div className="bg-white rounded-xl border border-neutral-150 p-5 shadow-xs max-w-2xl">
@@ -850,12 +692,14 @@ export default function AdminRounds() {
                         </div>
                         <div className="flex gap-1.5 self-end">
                           <button
+                            type="button"
                             onClick={() => handleSaveEdit(r.id)}
                             className="px-2.5 py-1.5 rounded bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-semibold flex items-center gap-1 cursor-pointer"
                           >
                             <Check className="w-3.5 h-3.5" /> Salvar
                           </button>
                           <button
+                            type="button"
                             onClick={handleCancelEdit}
                             className="px-2.5 py-1.5 rounded bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-semibold flex items-center gap-1 cursor-pointer"
                           >
@@ -916,6 +760,7 @@ export default function AdminRounds() {
                         )}
 
                         <button
+                          type="button"
                           onClick={() => handleStartEdit(r)}
                           className="p-1.5 text-neutral-500 hover:bg-neutral-100 rounded-md transition-all cursor-pointer"
                           title="Editar datas/status"

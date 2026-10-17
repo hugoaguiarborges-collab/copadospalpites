@@ -114,10 +114,12 @@ export function calculateParticipantStats(
       return hasOfficialGames || isApurada || hasEvaluatedGuesses;
     })
     .sort((a, b) => {
+      const timeA = new Date(a.fechamento).getTime() || 0;
+      const timeB = new Date(b.fechamento).getTime() || 0;
+      if (timeA !== timeB) return timeA - timeB;
       const numA = getRoundNumber(a.nome || a.id);
       const numB = getRoundNumber(b.nome || b.id);
-      if (numA !== numB) return numA - numB;
-      return (a.abertura || '').localeCompare(b.abertura || '');
+      return numA - numB;
     });
 
   // 3. Calcular pontos de cada participante rodada a rodada
