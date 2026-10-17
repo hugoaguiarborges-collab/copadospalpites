@@ -7,6 +7,26 @@
     <meta name="MobileOptimized" content="width" />
     <meta name="theme-color" content="#030719" />
     <title>UEFA Champions League • Copa dos Palpites</title>
+    <script>
+      // Gracefully ignore Vite client HMR WebSocket disconnection errors in dev iframe
+      window.addEventListener('unhandledrejection', function(event) {
+        var reason = event.reason;
+        var text = String(reason && (reason.message || reason.stack || reason) || '');
+        if (text.indexOf('WebSocket') !== -1 || text.indexOf('@vite/client') !== -1) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+        }
+      }, true);
+      window.addEventListener('error', function(event) {
+        var msg = String(event.message || '');
+        var file = String(event.filename || '');
+        if (msg.indexOf('WebSocket') !== -1 || file.indexOf('@vite/client') !== -1 || msg.indexOf('@vite/client') !== -1) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          return true;
+        }
+      }, true);
+    </script>
   </head>
   <body class="overflow-x-hidden w-full max-w-full">
     <div id="root" class="overflow-x-hidden w-full max-w-full"></div>

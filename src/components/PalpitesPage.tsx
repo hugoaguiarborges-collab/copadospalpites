@@ -30,7 +30,6 @@ import {
   Lock
 } from 'lucide-react';
 import { getRoundNumber, getFriendlyClosingLabel, getNextWednesday13h } from '../utils/dateUtils';
-import { restoreOfficialGuesses } from '../utils/backupGuesses';
 import { UclStarball, UclBadge } from './UclAssets';
 import RoundInfoDrawer from './RoundInfoDrawer';
 
@@ -62,9 +61,9 @@ const DRAW_PRESETS = ['0x0', '1x1', '2x2', '3x3'];
 
 const DEFAULT_GAMES: SingleGameGuess[] = [
   { id: 1, tipo: 'vitoria', vencedor: '', clube1: '', clube2: '', golsVencedor: '2', golsPerdedor: '0', golsEmpate: '1', capitao: '' },
-  { id: 2, tipo: 'vitoria', vencedor: '', clube1: '', clube2: '', golsVencedor: '2', golsPerdedor: '1', golsEmpate: '1', capitao: '' },
-  { id: 3, tipo: 'vitoria', vencedor: '', clube1: '', clube2: '', golsVencedor: '1', golsPerdedor: '0', golsEmpate: '0', capitao: '' },
-  { id: 4, tipo: 'vitoria', vencedor: '', clube1: '', clube2: '', golsVencedor: '3', golsPerdedor: '1', golsEmpate: '2', capitao: '' },
+  { id: 2, tipo: 'vitoria', vencedor: '', clube1: '', clube2: '', golsVencedor: '2', golsPerdedor: '0', golsEmpate: '1', capitao: '' },
+  { id: 3, tipo: 'vitoria', vencedor: '', clube1: '', clube2: '', golsVencedor: '2', golsPerdedor: '0', golsEmpate: '1', capitao: '' },
+  { id: 4, tipo: 'vitoria', vencedor: '', clube1: '', clube2: '', golsVencedor: '2', golsPerdedor: '0', golsEmpate: '1', capitao: '' },
   { id: 5, tipo: 'vitoria', vencedor: '', clube1: '', clube2: '', golsVencedor: '2', golsPerdedor: '0', golsEmpate: '1', capitao: '' }
 ];
 
@@ -236,17 +235,8 @@ export default function PalpitesPage({ onSuggestName }: PalpitesPageProps) {
           if (currentRound.id === 'round-1-quarta') roundIds.push('round-1');
 
           const gSnap = await getDocs(query(collection(db, 'palpites'), where('rodada', 'in', roundIds)));
-          let gList: Palpite[] = [];
+          const gList: Palpite[] = [];
           gSnap.forEach(d => gList.push({ id: d.id, ...d.data() } as Palpite));
-
-          // Auto-healing: Se palpites da rodada 1 estiverem vazios no cliente, recuperar automaticamente do backup
-          if (gList.length === 0 && (currentRound.id === 'round-1' || currentRound.id === 'round-1-quarta')) {
-            await restoreOfficialGuesses(currentRound.id);
-            const refetchSnap = await getDocs(query(collection(db, 'palpites'), where('rodada', 'in', roundIds)));
-            gList = [];
-            refetchSnap.forEach(d => gList.push({ id: d.id, ...d.data() } as Palpite));
-          }
-
           setAllRoundGuesses(gList);
         }
       } catch (err) {

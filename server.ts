@@ -149,6 +149,8 @@ Atenção CRÍTICA:
 
 // Vite middleware in dev or static files in production
 async function startServer() {
+  const httpServer = http.createServer(app);
+
   if (process.env.NODE_ENV === 'production') {
     app.use(express.static(path.resolve(__dirname, 'dist')));
     app.get('*', (req, res) => {
@@ -156,13 +158,20 @@ async function startServer() {
     });
   } else {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      configFile: path.resolve(__dirname, 'vite.config.ts'),
+      server: {
+        middlewareMode: true,
+        hmr: {
+          server: httpServer
+        },
+        watch: null,
+      },
       appType: 'spa'
     });
     app.use(vite.middlewares);
   }
 
-  app.listen(port, '0.0.0.0', () => {
+  httpServer.listen(port, '0.0.0.0', () => {
     console.log(`UEFA Champions League App Server running on port ${port}`);
   });
 }

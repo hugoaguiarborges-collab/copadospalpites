@@ -9,15 +9,16 @@ import {
   doc, 
   addDoc, 
   increment,
-  setDoc
+  setDoc,
+  writeBatch
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Rodada, Palpite, Participante, JogoResultadoOficial, JogoDisponivel } from '../types';
 import { TEAMS_LIST } from '../constants/teams';
-import { REAL_UCL_FIXTURES, getFixturesForRoundDate } from '../constants/uclFixtures';
+import { REAL_UCL_FIXTURES, getFixturesForRoundDate, findKnownFixtureForTeam } from '../constants/uclFixtures';
 import { evaluateGuessAgainstResult, parseGuess, normalizeTeamName, areTeamsMatching } from '../utils/scoreCalculator';
 import { getNextTuesday13h, getNextWednesday13h, getClosingForNextRound, getClosingForRound, formatDateTimeDisplay, getRoundNumber, isTuesdayMatchday, getFriendlyClosingLabel } from '../utils/dateUtils';
-import { restoreOfficialGuesses } from '../utils/backupGuesses';
+import { deleteRoundCascade } from '../utils/deleteRoundCascade';
 import TabelaParticipacao from './TabelaParticipacao';
 import { 
   Check, 
@@ -89,38 +90,45 @@ export default function AdminResults() {
 
   const [activeAdminTab, setActiveAdminTab] = useState<'apuracao' | 'participacao'>('apuracao');
 
-  // Load rounds and participants
-  useEffect(() => {
-    async function loadData() {
-      try {
-        const rSnap = await getDocs(collection(db, 'rodadas'));
-        const rList: Rodada[] = [];
-        rSnap.forEach(docObj => {
-          rList.push({ id: docObj.id, ...docObj.data() } as Rodada);
-        });
-        
-        // Sort rounds by round number
-        rList.sort((a,b) => getRoundNumber(a.nome || a.id) - getRoundNumber(b.nome || b.id));
-        setRounds(rList);
-        
-        if (rList.length > 0 && !selectedRoundId) {
-          // Select round awaiting evaluation (e.g. closed round not yet apurada), or open round, or first round
-          const awaitingEvaluation = rList.find(r => !r.is_test && r.status === 'encerrada' && !r.apurada);
-          const openRound = rList.find(r => !r.is_test && r.status === 'aberta');
-          const defaultRound = awaitingEvaluation || openRound || rList.find(r => !r.is_test) || rList[0];
-          setSelectedRoundId(defaultRound.id);
-        }
+  // In-App Modal confirmations (mobile & iframe safe, replaces window.confirm)
+  const [participantToDeleteGuesses, setParticipantToDeleteGuesses] = useState<string | null>(null);
+  const [isDeletingParticipantGuesses, setIsDeletingParticipantGuesses] = useState(false);
+  const [confirmDeleteRoundModalOpen, setConfirmDeleteRoundModalOpen] = useState(false);
+  const [isDeletingRoundCascade, setIsDeletingRoundCascade] = useState(false);
 
-        const pSnap = await getDocs(collection(db, 'participantes'));
-        const pList: Participante[] = [];
-        pSnap.forEach((docObj) => {
-          pList.push({ id: docObj.id, ...docObj.data() } as Participante);
-        });
-        setParticipants(pList);
-      } catch (err) {
-        console.error("Error loading initial admin data:", err);
+  // Load rounds and participants
+  const loadData = async () => {
+    try {
+      const rSnap = await getDocs(collection(db, 'rodadas'));
+      const rList: Rodada[] = [];
+      rSnap.forEach(docObj => {
+        rList.push({ id: docObj.id, ...docObj.data() } as Rodada);
+      });
+      
+      // Sort rounds by round number
+      rList.sort((a,b) => getRoundNumber(a.nome || a.id) - getRoundNumber(b.nome || b.id));
+      setRounds(rList);
+      
+      if (rList.length > 0 && !selectedRoundId) {
+        // Select round awaiting evaluation (e.g. closed round not yet apurada), or open round, or first round
+        const awaitingEvaluation = rList.find(r => !r.is_test && r.status === 'encerrada' && !r.apurada);
+        const openRound = rList.find(r => !r.is_test && r.status === 'aberta');
+        const defaultRound = awaitingEvaluation || openRound || rList.find(r => !r.is_test) || rList[0];
+        setSelectedRoundId(defaultRound.id);
       }
+
+      const pSnap = await getDocs(collection(db, 'participantes'));
+      const pList: Participante[] = [];
+      pSnap.forEach((docObj) => {
+        pList.push({ id: docObj.id, ...docObj.data() } as Participante);
+      });
+      setParticipants(pList);
+    } catch (err) {
+      console.error("Error loading initial admin data:", err);
     }
+  };
+
+  useEffect(() => {
     loadData();
   }, []);
 
@@ -164,16 +172,10 @@ export default function AdminResults() {
         // Look up which confrontation contains this club
         const foundFixture = allKnownFixtures.find(f =>
           areTeamsMatching(f.time_mandante, winner) || areTeamsMatching(f.time_visitante, winner)
-        );
+        ) || findKnownFixtureForTeam(winner);
 
-        if (foundFixture) {
-          home = foundFixture.time_mandante;
-          away = foundFixture.time_visitante;
-        } else {
-          // Club with no opponent found yet in calendar
-          home = winner;
-          away = '';
-        }
+        home = foundFixture.time_mandante;
+        away = foundFixture.time_visitante;
       }
 
       if (home) {
@@ -209,10 +211,18 @@ export default function AdminResults() {
 
     setLoading(true);
     try {
-      const targetRId = selectedRoundId;
-      const roundIds = [targetRId];
-      if (targetRId === 'round-1') roundIds.push('round-1-quarta');
-      if (targetRId === 'round-1-quarta') roundIds.push('round-1');
+      const targetR = rounds.find(r => r.id === selectedRoundId);
+      const roundIds = Array.from(
+        new Set(
+          [
+            selectedRoundId,
+            targetR?.nome,
+            targetR?.id,
+            selectedRoundId === 'round-1' ? 'round-1-quarta' : null,
+            selectedRoundId === 'round-1-quarta' ? 'round-1' : null
+          ].filter(Boolean)
+        )
+      ) as string[];
 
       const q = query(
         collection(db, 'palpites'),
@@ -224,16 +234,6 @@ export default function AdminResults() {
       snap.forEach((docObj) => {
         list.push({ id: docObj.id, ...docObj.data() } as Palpite);
       });
-
-      // Auto-healing: If guesses are 0 for round-1, restore them!
-      if (list.length === 0 && (targetRId === 'round-1' || targetRId === 'round-1-quarta')) {
-        await restoreOfficialGuesses(targetRId);
-        const refetchSnap = await getDocs(q);
-        list = [];
-        refetchSnap.forEach((docObj) => {
-          list.push({ id: docObj.id, ...docObj.data() } as Palpite);
-        });
-      }
 
       setGuesses(list);
 
@@ -249,7 +249,6 @@ export default function AdminResults() {
       });
 
       // Check if this round already has official matches registered that match the actual guesses
-      const targetR = rounds.find(r => r.id === selectedRoundId);
       const hasRealSavedMatches = Boolean(
         targetR?.apurada &&
         targetR?.jogos_oficiais &&
@@ -823,6 +822,9 @@ export default function AdminResults() {
   };
 
   const targetSelectedRound = rounds.find(r => r.id === selectedRoundId);
+  const isSelectedRoundOpen = targetSelectedRound 
+    ? (targetSelectedRound.status === 'aberta' && new Date() < new Date(targetSelectedRound.fechamento))
+    : false;
 
   const handleOpenMarketNow = async () => {
     if (!selectedRoundId) return;
@@ -866,19 +868,87 @@ export default function AdminResults() {
     }
   };
 
-  const handleRestoreGuesses = async () => {
-    setErrorMsg('');
-    setSuccessMsg('');
+  const handleDeleteParticipantGuesses = (participantName: string) => {
+    if (!participantName || !selectedRoundId) return;
+    setParticipantToDeleteGuesses(participantName);
+  };
+
+  const executeConfirmDeleteParticipantGuesses = async () => {
+    if (!participantToDeleteGuesses || !selectedRoundId) return;
+    const participantName = participantToDeleteGuesses;
+
+    setIsDeletingParticipantGuesses(true);
     try {
-      const targetRId = selectedRoundId || 'round-1';
-      const count = await restoreOfficialGuesses(targetRId);
-      await loadGuessesForSelectedRound();
-      setSuccessMsg(`✅ ${count} palpites oficiais dos 7 participantes recuperados com sucesso para a ${targetSelectedRound?.nome || 'rodada'}!`);
+      const targetR = rounds.find(r => r.id === selectedRoundId);
+      const roundIds = Array.from(
+        new Set([selectedRoundId, targetR?.nome, targetR?.id].filter(Boolean))
+      ) as string[];
+
+      const q = query(
+        collection(db, 'palpites'),
+        where('rodada', 'in', roundIds),
+        where('participante', '==', participantName)
+      );
+      const snap = await getDocs(q);
+      const batch = writeBatch(db);
+      snap.forEach(d => {
+        batch.delete(doc(db, 'palpites', d.id));
+      });
+      await batch.commit();
+
+      // Clean local count in localStorage if present
+      const pFound = participants.find(p => p.nome.toLowerCase() === participantName.toLowerCase());
+      if (pFound) {
+        try {
+          localStorage.removeItem(`palpites_count_${pFound.id}_${selectedRoundId}`);
+        } catch {}
+      }
+
+      setGuesses(prev => prev.filter(g => g.participante.toLowerCase() !== participantName.toLowerCase()));
+      setSuccessMsg(`✅ Palpites de ${participantName} apagados com sucesso! O membro já pode enviar novos palpites.`);
+      setParticipantToDeleteGuesses(null);
     } catch (err: any) {
-      setErrorMsg(`Erro ao recuperar palpites: ${err?.message || err}`);
+      console.error("Error deleting participant guesses:", err);
+      setErrorMsg(`Erro ao apagar palpites de ${participantName}: ${err?.message || err}`);
+    } finally {
+      setIsDeletingParticipantGuesses(false);
     }
   };
 
+  const handleDeleteCurrentRound = () => {
+    if (!selectedRoundId) return;
+    setConfirmDeleteRoundModalOpen(true);
+  };
+
+  const executeConfirmDeleteCurrentRound = async () => {
+    if (!selectedRoundId) return;
+    const targetR = rounds.find(r => r.id === selectedRoundId);
+    const roundName = targetR?.nome || selectedRoundId;
+
+    setIsDeletingRoundCascade(true);
+    setErrorMsg('');
+    setSuccessMsg('');
+    try {
+      const result = await deleteRoundCascade(selectedRoundId, roundName);
+      setSuccessMsg(`🏆 Rodada "${roundName}" e todos os seus ${result.deletedPalpitesCount} palpites e pontos foram apagados com sucesso!`);
+      setSelectedRoundId('');
+      setGuesses([]);
+      setOfficialMatches([
+        { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '' },
+        { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '' },
+        { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '' },
+        { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '' },
+        { timeMandante: '', golsMandante: '', golsVisitante: '', timeVisitante: '' }
+      ]);
+      setConfirmDeleteRoundModalOpen(false);
+      await loadData();
+    } catch (err: any) {
+      console.error("Erro ao apagar rodada com cascata:", err);
+      setErrorMsg(`Erro ao apagar rodada: ${err?.message || err}`);
+    } finally {
+      setIsDeletingRoundCascade(false);
+    }
+  };
 
   return (
     <div className="space-y-8">
@@ -957,13 +1027,18 @@ export default function AdminResults() {
               </button>
             )}
 
+            <span className="px-3 py-1.5 rounded-xl bg-[#060c28] border border-cyan-500/30 text-cyan-300 text-xs font-bold font-mono">
+              Palpites Registrados: <strong>{guesses.length}</strong>
+            </span>
+
             <button
               type="button"
-              onClick={handleRestoreGuesses}
-              className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white text-xs font-black uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-all shadow-md shadow-amber-950/50"
-              title="Recupera todos os palpites oficiais apagados dos 7 participantes"
+              onClick={handleDeleteCurrentRound}
+              className="px-3 py-1.5 rounded-xl bg-rose-950/70 hover:bg-rose-900 border border-rose-500/40 text-rose-200 hover:text-white text-xs font-bold font-mono transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
+              title="Excluir permanentemente esta rodada, todos os palpites e estornar pontos dos participantes"
             >
-              <RotateCcw className="w-3.5 h-3.5" /> Recuperar Palpites ({guesses.length})
+              <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+              <span>Excluir Rodada</span>
             </button>
           </div>
         )}
@@ -1012,7 +1087,8 @@ export default function AdminResults() {
           round={targetSelectedRound}
           participantes={participants}
           palpites={guesses}
-          isMarketClosed={targetSelectedRound.status === 'encerrada'}
+          isMarketClosed={!isSelectedRoundOpen}
+          onDeleteGuesses={handleDeleteParticipantGuesses}
         />
       ) : activeAdminTab === 'participacao' && !targetSelectedRound ? (
         <div className="p-12 text-center text-sm text-slate-400 bg-[#080f33]/90 border border-cyan-500/20 rounded-2xl">
@@ -1020,7 +1096,139 @@ export default function AdminResults() {
         </div>
       ) : null}
 
-      {activeAdminTab === 'apuracao' && (
+      {activeAdminTab === 'apuracao' && isSelectedRoundOpen && targetSelectedRound && (
+        <div className="bg-[#080f33]/90 rounded-2xl border border-amber-500/35 p-6 sm:p-8 shadow-2xl backdrop-blur-md space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-amber-500/20 pb-5">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-xl bg-amber-950/80 border border-amber-500/50 flex items-center justify-center shrink-0 shadow-lg shadow-amber-950/80">
+                <Lock className="w-6 h-6 text-amber-400" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <UclBadge text="SIGILO DO MERCADO ATIVO" variant="cyan" />
+                  <span className="text-[10px] text-amber-300 font-mono font-bold uppercase tracking-wider">
+                    ● Imparcialidade Garantida
+                  </span>
+                </div>
+                <h3 className="text-lg sm:text-xl font-black text-white font-display uppercase tracking-tight mt-1">
+                  Palpites Sob Sigilo Oficial da Champions League
+                </h3>
+                <p className="text-xs text-slate-300 font-mono mt-0.5">
+                  O mercado para a <strong>{targetSelectedRound.nome}</strong> está aberto. Os palpites individuais ficam ocultos do Administrador até o fechamento.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handleCloseMarketNow}
+                className="px-3.5 py-2 bg-rose-950/70 hover:bg-rose-900 border border-rose-500/50 text-rose-200 hover:text-white rounded-xl text-xs font-bold font-mono transition-all cursor-pointer flex items-center gap-1.5 shadow-md"
+                title="Encerrar o mercado agora para suspender o sigilo e iniciar a apuração"
+              >
+                <Lock className="w-3.5 h-3.5 text-rose-400" />
+                <span>Encerrar Mercado Agora</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Participation Metrics */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="p-4 bg-[#050b28] rounded-xl border border-cyan-500/20 shadow-inner">
+              <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider font-bold">Total de Participantes</span>
+              <p className="text-2xl font-black text-white font-mono mt-1">{participants.length}</p>
+            </div>
+            <div className="p-4 bg-[#050b28] rounded-xl border border-emerald-500/30 shadow-inner">
+              <span className="text-[10px] font-mono text-emerald-300 uppercase tracking-wider font-bold">Palpites Já Enviados</span>
+              <p className="text-2xl font-black text-emerald-400 font-mono mt-1">
+                {Object.keys(validGuessesByParticipant).length}
+              </p>
+            </div>
+            <div className="p-4 bg-[#050b28] rounded-xl border border-amber-500/30 shadow-inner">
+              <span className="text-[10px] font-mono text-amber-300 uppercase tracking-wider font-bold">Aguardando Envio</span>
+              <p className="text-2xl font-black text-amber-400 font-mono mt-1">
+                {Math.max(0, participants.length - Object.keys(validGuessesByParticipant).length)}
+              </p>
+            </div>
+          </div>
+
+          {/* Participation List with Delete Option */}
+          <div className="space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 pb-1">
+              <h4 className="text-xs font-black uppercase tracking-wider text-slate-200 font-mono flex items-center gap-2">
+                <Users className="w-4 h-4 text-cyan-400" />
+                Membros com Palpites Gravados ({Object.keys(validGuessesByParticipant).length})
+              </h4>
+              <span className="text-[10px] font-mono text-slate-400">
+                Fechamento oficial: {formatDateTimeDisplay(targetSelectedRound.fechamento)}
+              </span>
+            </div>
+
+            <div className="divide-y divide-cyan-950/80 border border-cyan-500/20 rounded-xl overflow-hidden bg-[#04081c]/90">
+              {participants.map(p => {
+                const pGuesses = validGuessesByParticipant[p.nome] || [];
+                const hasSubmitted = pGuesses.length > 0;
+                const latestEnvio = hasSubmitted ? pGuesses[0]?.data_hora_envio : null;
+
+                return (
+                  <div key={p.id} className="p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-cyan-950/20 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-black text-xs font-mono border ${
+                        hasSubmitted ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40' : 'bg-slate-900 text-slate-400 border-slate-700'
+                      }`}>
+                        {p.nome.charAt(0)}
+                      </div>
+                      <div>
+                        <span className="font-bold text-white text-xs sm:text-sm font-display block">
+                          {p.nome}
+                        </span>
+                        <span className="text-[10px] font-mono text-slate-400">
+                          {hasSubmitted 
+                            ? `Enviado em: ${latestEnvio ? formatDateTimeDisplay(latestEnvio) : 'Registrado'}` 
+                            : 'Ainda não enviou palpites'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {hasSubmitted ? (
+                        <>
+                          <span className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase bg-emerald-950/90 text-emerald-300 border border-emerald-500/40 font-mono flex items-center gap-1">
+                            <Lock className="w-3 h-3 text-amber-400" />
+                            Palpites Registrados (Sob Sigilo)
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteParticipantGuesses(p.nome)}
+                            className="px-2.5 py-1 bg-rose-950/70 hover:bg-rose-900 border border-rose-500/40 text-rose-300 hover:text-white rounded-lg text-[11px] font-bold font-mono transition-colors cursor-pointer flex items-center gap-1"
+                            title={`Apagar palpites de ${p.nome} para permitir que envie novamente`}
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            <span>Apagar Palpites</span>
+                          </button>
+                        </>
+                      ) : (
+                        <span className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase bg-slate-900 text-slate-400 border border-slate-700 font-mono">
+                          Pendente
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="p-3.5 bg-[#030617] rounded-xl border border-cyan-900/60 text-xs text-cyan-300 font-mono flex items-center gap-2.5">
+            <UclStarball className="w-4 h-4 text-cyan-400 shrink-0" />
+            <span>
+              🔒 <strong>Regra de Sigilo:</strong> O ADM não pode ver os palpites dos participantes enquanto o mercado estiver aberto. Assim que o mercado fechar na terça-feira às 13:00 (ou ao clicar em "Encerrar Mercado Agora"), esta tela exibirá os confrontos reais e os palpites para você avaliar e lançar as pontuações!
+            </span>
+          </div>
+        </div>
+      )}
+
+      {activeAdminTab === 'apuracao' && !isSelectedRoundOpen && (
         <>
 
       {/* Step 1: Official Matches Input Card */}
@@ -1491,6 +1699,15 @@ export default function AdminResults() {
                       <span className="px-3 py-1 rounded-lg bg-cyan-950/90 border border-cyan-400/50 text-cyan-200 font-black text-xs font-mono shadow-xs">
                         Total a Somar: +{item.totalPontos} pts
                       </span>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteParticipantGuesses(item.participante)}
+                        className="px-2.5 py-1 bg-rose-950/70 hover:bg-rose-900 border border-rose-500/40 text-rose-300 hover:text-white rounded-lg text-[11px] font-bold font-mono transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
+                        title={`Apagar todos os palpites de ${item.participante} desta rodada`}
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        <span className="hidden sm:inline">Apagar Palpites</span>
+                      </button>
                     </div>
                   </div>
 
@@ -1803,6 +2020,132 @@ export default function AdminResults() {
         )}
       </div>
       </>
+      )}
+
+      {/* MODAL CONFIRMAÇÃO EXCLUSÃO DA RODADA */}
+      {confirmDeleteRoundModalOpen && targetSelectedRound && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-[#080f33] border border-rose-500/50 rounded-2xl max-w-md w-full p-5 sm:p-6 space-y-4 shadow-2xl text-white">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl bg-rose-950/80 border border-rose-500/50 flex items-center justify-center shrink-0 shadow-md">
+                <Trash2 className="w-6 h-6 text-rose-400" />
+              </div>
+              <div>
+                <h4 className="text-base font-black font-display text-white uppercase">
+                  Excluir Rodada
+                </h4>
+                <span className="text-xs text-rose-300 font-bold font-mono">
+                  {targetSelectedRound.nome}
+                </span>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Tem certeza que deseja apagar permanentemente a <strong>{targetSelectedRound.nome}</strong>?
+            </p>
+
+            <ul className="text-xs text-slate-300 space-y-1.5 bg-[#050a24] p-3 rounded-xl border border-rose-500/20 font-mono">
+              <li className="flex items-start gap-1.5">
+                <span className="text-rose-400 font-bold">✕</span>
+                <span>A rodada será excluída permanentemente.</span>
+              </li>
+              <li className="flex items-start gap-1.5">
+                <span className="text-rose-400 font-bold">✕</span>
+                <span>Todos os palpites enviados para ela serão apagados.</span>
+              </li>
+              <li className="flex items-start gap-1.5">
+                <span className="text-rose-400 font-bold">✕</span>
+                <span>Os pontos concedidos aos participantes serão <strong>estornados</strong> da classificação geral.</span>
+              </li>
+            </ul>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-rose-500/20">
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteRoundModalOpen(false)}
+                disabled={isDeletingRoundCascade}
+                className="px-4 py-2 bg-[#050b28] hover:bg-[#0c164a] text-slate-300 hover:text-white rounded-xl text-xs font-bold font-mono transition-colors cursor-pointer border border-cyan-500/20"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={executeConfirmDeleteCurrentRound}
+                disabled={isDeletingRoundCascade}
+                className="px-4 py-2 bg-gradient-to-r from-rose-600 to-red-700 hover:from-rose-500 hover:to-red-600 text-white rounded-xl text-xs font-black uppercase font-mono tracking-wider transition-all shadow-lg shadow-rose-950/60 cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {isDeletingRoundCascade ? (
+                  <>
+                    <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                    <span>Apagando...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5 text-white" />
+                    <span>Confirmar Exclusão</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CONFIRMAÇÃO EXCLUSÃO DE PALPITES DO MEMBRO */}
+      {participantToDeleteGuesses && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-[#080f33] border border-amber-500/50 rounded-2xl max-w-md w-full p-5 sm:p-6 space-y-4 shadow-2xl text-white">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl bg-amber-950/80 border border-amber-500/50 flex items-center justify-center shrink-0 shadow-md">
+                <Trash2 className="w-6 h-6 text-amber-400" />
+              </div>
+              <div>
+                <h4 className="text-base font-black font-display text-white uppercase">
+                  Apagar Palpites do Membro
+                </h4>
+                <span className="text-xs text-amber-300 font-bold font-mono">
+                  {participantToDeleteGuesses}
+                </span>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Deseja realmente apagar todos os palpites de <strong>"{participantToDeleteGuesses}"</strong> para a rodada selecionada?
+            </p>
+            <p className="text-xs text-slate-400 font-mono">
+              O participante ficará liberado para preencher e enviar novos palpites antes do fechamento do mercado.
+            </p>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-amber-500/20">
+              <button
+                type="button"
+                onClick={() => setParticipantToDeleteGuesses(null)}
+                disabled={isDeletingParticipantGuesses}
+                className="px-4 py-2 bg-[#050b28] hover:bg-[#0c164a] text-slate-300 hover:text-white rounded-xl text-xs font-bold font-mono transition-colors cursor-pointer border border-cyan-500/20"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={executeConfirmDeleteParticipantGuesses}
+                disabled={isDeletingParticipantGuesses}
+                className="px-4 py-2 bg-gradient-to-r from-amber-600 to-orange-700 hover:from-amber-500 hover:to-orange-600 text-white rounded-xl text-xs font-black uppercase font-mono tracking-wider transition-all shadow-lg shadow-amber-950/60 cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {isDeletingParticipantGuesses ? (
+                  <>
+                    <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                    <span>Apagando...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5 text-white" />
+                    <span>Apagar Palpites</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

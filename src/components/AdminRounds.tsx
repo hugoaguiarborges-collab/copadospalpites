@@ -18,6 +18,7 @@ import { Calendar, Plus, Edit, Trash, Check, X, ShieldAlert, Star, Search, Unloc
 import { restoreOfficialGuesses } from '../utils/backupGuesses';
 import { fetchUclFixturesWithAI, REAL_UCL_FIXTURES } from '../constants/uclFixtures';
 import { JogoDisponivel } from '../types';
+import { deleteRoundCascade } from '../utils/deleteRoundCascade';
 
 export default function AdminRounds() {
   const [rounds, setRounds] = useState<Rodada[]>([]);
@@ -41,6 +42,10 @@ export default function AdminRounds() {
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [submitLoading, setSubmitLoading] = useState(false);
+
+  // In-App Modal confirmation for deleting round with cascade (replaces window.confirm)
+  const [roundToDelete, setRoundToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [isDeletingRound, setIsDeletingRound] = useState(false);
 
   // AI Matches Retrieval state
   const [aiTargetRoundId, setAiTargetRoundId] = useState<string>('');
@@ -238,17 +243,25 @@ export default function AdminRounds() {
     }
   };
 
-  const handleDeleteRound = async (id: string, name: string) => {
-    if (!confirm(`Excluir a "${name}"? Os palpites da rodada continuarão no banco mas o mercado será excluído.`)) {
-      return;
-    }
+  const handleDeleteRound = (id: string, name: string) => {
+    setRoundToDelete({ id, name });
+  };
+
+  const executeConfirmDeleteRound = async () => {
+    if (!roundToDelete) return;
+    setIsDeletingRound(true);
+    setErrorMsg('');
+    setSuccessMsg('');
     try {
-      await deleteDoc(doc(db, 'rodadas', id));
-      setSuccessMsg(`Rodada "${name}" deletada com sucesso.`);
-      loadRounds();
-    } catch (err) {
-      console.error(err);
-      setErrorMsg('Erro ao deletar rodada.');
+      const result = await deleteRoundCascade(roundToDelete.id, roundToDelete.name);
+      setSuccessMsg(`🏆 Rodada "${roundToDelete.name}" e todos os seus ${result.deletedPalpitesCount} palpites e pontos foram APAGADOS com sucesso!`);
+      setRoundToDelete(null);
+      await loadRounds();
+    } catch (err: any) {
+      console.error("Erro ao apagar rodada com cascata:", err);
+      setErrorMsg(`Erro ao apagar rodada: ${err?.message || err}`);
+    } finally {
+      setIsDeletingRound(false);
     }
   };
 
@@ -349,44 +362,9 @@ export default function AdminRounds() {
     }
   };
 
-  const handleDeleteTestRound = async () => {
+  const handleDeleteTestRound = () => {
     if (!testRound) return;
-    if (!confirm('Deseja realmente APAGAR a rodada de teste? Isso removerá a rodada de teste e os palpites de teste associados, iniciando oficialmente o campeonato oficial com sigilo absoluto.')) {
-      return;
-    }
-
-    setErrorMsg('');
-    setSuccessMsg('');
-    try {
-      // 1. Deletar documento da rodada de teste
-      await deleteDoc(doc(db, 'rodadas', testRound.id));
-
-      // 2. Limpar palpites vinculados à rodada de teste
-      try {
-        const qPalpites = query(collection(db, 'palpites'), where('rodada', '==', testRound.id));
-        const pSnap = await getDocs(qPalpites);
-        const pDeletes = pSnap.docs.map(d => deleteDoc(doc(db, 'palpites', d.id)));
-        await Promise.all(pDeletes);
-      } catch (errP) {
-        console.warn("Erro ao limpar palpites da rodada de teste:", errP);
-      }
-
-      // 3. Limpar resultados oficiais vinculados à rodada de teste se houver
-      try {
-        const qOficiais = query(collection(db, 'resultados_oficiais'), where('rodada_id', '==', testRound.id));
-        const ofSnap = await getDocs(qOficiais);
-        const ofDeletes = ofSnap.docs.map(d => deleteDoc(doc(db, 'resultados_oficiais', d.id)));
-        await Promise.all(ofDeletes);
-      } catch (errOf) {
-        console.warn("Erro ao limpar resultados oficiais da rodada de teste:", errOf);
-      }
-
-      setSuccessMsg('🏆 Rodada de teste APAGADA com sucesso! O campeonato oficial agora começa oficialmente com todas as regras de sigilo e fechamento às terças 13h.');
-      loadRounds();
-    } catch (err) {
-      console.error(err);
-      setErrorMsg('Erro ao apagar rodada de teste.');
-    }
+    setRoundToDelete({ id: testRound.id, name: testRound.nome });
   };
 
   return (
@@ -945,11 +923,13 @@ export default function AdminRounds() {
                           <Edit className="w-4.5 h-4.5" />
                         </button>
                         <button
+                          type="button"
                           onClick={() => handleDeleteRound(r.id, r.nome)}
-                          className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-md transition-all cursor-pointer"
-                          title="Excluir rodada"
+                          className="p-2 text-rose-500 hover:text-white hover:bg-rose-600 active:bg-rose-700 rounded-lg transition-all cursor-pointer shadow-xs active:scale-95 flex items-center justify-center min-w-[36px] min-h-[36px]"
+                          title="Excluir rodada e seus palpites/pontos"
+                          aria-label={`Excluir rodada ${r.nome}`}
                         >
-                          <Trash className="w-4.5 h-4.5" />
+                          <Trash className="w-5 h-5" />
                         </button>
                       </div>
                     </div>
@@ -960,6 +940,75 @@ export default function AdminRounds() {
           </div>
         )}
       </div>
+
+      {/* MODAL DE CONFIRMAÇÃO DE EXCLUSÃO DE RODADA (100% SEGURO NO MOBILE / IFRAME) */}
+      {roundToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-[#080f33] border border-rose-500/50 rounded-2xl max-w-md w-full p-5 sm:p-6 space-y-4 shadow-2xl text-white">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl bg-rose-950/80 border border-rose-500/50 flex items-center justify-center shrink-0 shadow-md">
+                <Trash className="w-6 h-6 text-rose-400" />
+              </div>
+              <div>
+                <h4 className="text-base font-black font-display text-white uppercase">
+                  Excluir Rodada
+                </h4>
+                <span className="text-xs text-rose-300 font-bold font-mono">
+                  {roundToDelete.name}
+                </span>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Tem certeza que deseja apagar a rodada <strong>{roundToDelete.name}</strong>?
+            </p>
+
+            <ul className="text-xs text-slate-300 space-y-1.5 bg-[#050a24] p-3 rounded-xl border border-rose-500/20 font-mono">
+              <li className="flex items-start gap-1.5">
+                <span className="text-rose-400 font-bold">✕</span>
+                <span>A rodada será permanentemente removida.</span>
+              </li>
+              <li className="flex items-start gap-1.5">
+                <span className="text-rose-400 font-bold">✕</span>
+                <span>Todos os palpites enviados para ela serão apagados.</span>
+              </li>
+              <li className="flex items-start gap-1.5">
+                <span className="text-rose-400 font-bold">✕</span>
+                <span>Os pontos concedidos aos participantes nesta rodada serão <strong>estornados</strong> da classificação geral.</span>
+              </li>
+            </ul>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-rose-500/20">
+              <button
+                type="button"
+                onClick={() => setRoundToDelete(null)}
+                disabled={isDeletingRound}
+                className="px-4 py-2 bg-[#050b28] hover:bg-[#0c164a] text-slate-300 hover:text-white rounded-xl text-xs font-bold font-mono transition-colors cursor-pointer border border-cyan-500/20"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={executeConfirmDeleteRound}
+                disabled={isDeletingRound}
+                className="px-4 py-2 bg-gradient-to-r from-rose-600 to-red-700 hover:from-rose-500 hover:to-red-600 text-white rounded-xl text-xs font-black uppercase font-mono tracking-wider transition-all shadow-lg shadow-rose-950/60 cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {isDeletingRound ? (
+                  <>
+                    <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                    <span>Apagando...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash className="w-3.5 h-3.5 text-white" />
+                    <span>Confirmar Exclusão</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
